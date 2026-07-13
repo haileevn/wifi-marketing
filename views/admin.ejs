@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>H2T WiFi Marketing</title>
+<style>
+:root{--ink:#1a202c;--paper:#f7f8fa;--accent:#3B82F6;--line:#e2e8f0;--red:#B4452C}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);padding:28px 20px 60px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:26px;font-weight:800;margin-bottom:2px}
+.sub{color:#64748b;font-size:14px;margin-bottom:26px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:28px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+.card b{display:block;font-size:30px;font-weight:800;color:var(--ink)}
+.card span{font-size:12px;color:#64748b}
+h2{font-size:17px;font-weight:700;margin:28px 0 10px}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:13px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:#f1f5f9;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#64748b}
+tr:last-child td{border-bottom:none}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;cursor:pointer}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:6px}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+.btn-red{background:var(--red)}
+.btn-green{background:#10B981}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+form.add{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}
+form.add input{padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+.saved{background:#d1fae5;border:1px solid #10B981;color:#065f46;padding:10px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>H2T WiFi Marketing</h1>
+  <p class="sub">Hệ thống thu thập khách hàng qua WiFi cho chuỗi quán</p>
+
+  <% if (saved) { %><div class="saved">✓ Đã lưu thay đổi thành công.</div><% } %>
+
+  <div class="cards">
+    <div class="card"><b><%= stats.totalCustomers %></b><span>Khách hàng</span></div>
+    <div class="card"><b><%= stats.totalVisits %></b><span>Tổng lượt kết nối</span></div>
+    <div class="card"><b><%= stats.today %></b><span>Hôm nay</span></div>
+    <div class="card"><b><%= locations.length %></b><span>Số quán</span></div>
+  </div>
+
+  <!-- Danh sách quán -->
+  <h2>Danh sách quán</h2>
+  <table>
+    <tr><th>Quán</th><th>Gateway</th><th>Khách</th><th>Lượt</th><th>Hôm nay</th><th>Giao diện</th></tr>
+    <% stats.byLocation.forEach(l => { %>
+    <tr>
+      <td><b><%= l.display_name %></b></td>
+      <td><code><%= l.gateway_name %></code></td>
+      <td><%= l.customers %></td>
+      <td><%= l.visits %></td>
+      <td><%= l.today || 0 %></td>
+      <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
+        <a class="btn btn-sm btn-outline" href="/admin/editor/<%= l.id %>">✏️ Sửa giao diện</a>
+        <a class="btn btn-sm" href="/preview/<%= l.id %>" target="_blank" style="background:#7C3AED">👁️ Xem</a>
+      </td>
+    </tr>
+    <% }) %>
+  </table>
+
+  <!-- Thêm quán -->
+  <h2>Thêm quán mới</h2>
+  <form class="add" method="POST" action="/admin/locations">
+    <input name="gateway_name" placeholder="gatewayname (vd: comtam-q1)" required>
+    <input name="display_name" placeholder="Tên quán (vd: Cơm Tấm Ông Mập Q1)" required>
+    <input name="faskey" placeholder="faskey" value="<%= defaultFaskey %>" required>
+    <input name="promo_text" placeholder="Câu khuyến mãi (có thể để trống)">
+    <input name="zalo_link" placeholder="Link Zalo OA (không bắt buộc)">
+    <button class="btn" type="submit">+ Thêm quán</button>
+  </form>
+
+  <!-- ZNS log -->
+  <% if (zns.length) { %>
+  <h2>Tin ZNS gần nhất</h2>
+  <table>
+    <tr><th>Thời gian</th><th>SĐT</th><th>Campaign</th><th>Trạng thái</th></tr>
+    <% zns.forEach(z => { %>
+    <tr>
+      <td><%= z.created_at %></td>
+      <td><%= z.phone %></td>
+      <td><%= z.campaign %></td>
+      <td><span style="color:<%= z.status==='sent'?'#10B981':'#EF4444' %>"><b><%= z.status %></b></span>
+          <%= z.detail==='dry-run'?' (dry-run)':'' %></td>
+    </tr>
+    <% }) %>
+  </table>
+  <% } %>
+
+  <!-- Lượt kết nối gần nhất -->
+  <h2>50 lượt kết nối gần nhất</h2>
+  <div style="margin-bottom:10px"><a class="btn btn-green" href="/admin/export.csv">⬇ Tải CSV toàn bộ khách</a></div>
+  <table>
+    <tr><th>Thời gian</th><th>SĐT</th><th>Tên</th><th>Quán</th><th>MAC</th></tr>
+    <% recent.forEach(r => { %>
+    <tr>
+      <td><%= r.created_at %></td>
+      <td><%= r.phone %></td>
+      <td><%= r.name %></td>
+      <td><%= r.display_name %></td>
+      <td><code style="font-size:11px"><%= r.client_mac %></code></td>
+    </tr>
+    <% }) %>
+  </table>
+</div>
+</body>
+</html>
