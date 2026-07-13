@@ -25,6 +25,20 @@ function parseFasParam(b64) {
     return out;
   } catch { return null; }
 }
+function safeDecodeURIComponent(value) {
+  try { return decodeURIComponent(String(value || "")); }
+  catch { return String(value || ""); }
+}
+
+// openNDS có thể tự nối hậu tố " Node:<MAC>" vào gatewayname.
+// Ví dụ: "comtam-q1%20Node%3ac4411e6300e4%20" -> "comtam-q1"
+function normalizeGatewayName(value) {
+  return safeDecodeURIComponent(value)
+    .trim()
+    .replace(/\s+Node:[a-fA-F0-9:-]+\s*$/i, "")
+    .trim();
+}
+
 function rhid(hid, key) { return crypto.createHash("sha256").update(hid+key).digest("hex"); }
 function validPhone(p)   { return /^(0|\+84)\d{9}$/.test((p||"").replace(/[\s.-]/g,"")); }
 function normPhone(p)    { const s=(p||"").replace(/[\s.-]/g,""); return s.startsWith("+84")?"0"+s.slice(3):s; }
@@ -39,16 +53,19 @@ function adminAuth(req, res, next) {
 app.get("/fas", (req, res) => {
   const p = req.query.fas ? parseFasParam(req.query.fas) : req.query;
   if (!p?.hid || !p?.gatewayname) return res.status(400).render("error",{message:"Thiếu thông tin từ router."});
-  const loc = store.findLocationByGateway(p.gatewayname);
-  if (!loc) return res.status(404).render("error",{message:`Chưa khai báo quán "${p.gatewayname}".`});
-  res.render("portal",{ location:loc, hid:p.hid, gatewayname:p.gatewayname,
+
+  const gatewayname = normalizeGatewayName(p.gatewayname);
+  const loc = store.findLocationByGateway(gatewayname);
+  if (!loc) return res.status(404).render("error",{message:`Chưa khai báo quán "${gatewayname}".`});
+  res.render("portal",{ location:loc, hid:p.hid, gatewayname,
     gatewayaddress:p.gatewayaddress||"", gatewayport:p.gatewayport||"2050",
     clientmac:p.clientmac||"", clientip:p.clientip||"",
     originurl:p.originurl||"http://google.com", error:null });
 });
 
 app.post("/auth", (req, res) => {
-  const { hid, gatewayname, gatewayaddress, gatewayport, clientmac, clientip, originurl, phone, name } = req.body;
+  const { hid, gatewayname:rawGatewayName, gatewayaddress, gatewayport, clientmac, clientip, originurl, phone, name } = req.body;
+  const gatewayname = normalizeGatewayName(rawGatewayName);
   const loc = store.findLocationByGateway(gatewayname);
   if (!loc || !hid || !gatewayaddress) return res.status(400).render("error",{message:"Phiên không hợp lệ."});
   if (!validPhone(phone)) return res.render("portal",{ location:loc, hid, gatewayname, gatewayaddress, gatewayport,
