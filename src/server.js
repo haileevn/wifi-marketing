@@ -26,17 +26,32 @@ function parseFasParam(b64) {
   } catch { return null; }
 }
 function safeDecodeURIComponent(value) {
-  try { return decodeURIComponent(String(value || "")); }
-  catch { return String(value || ""); }
+  const input = String(value || "");
+  try { return decodeURIComponent(input); }
+  catch { return input; }
 }
 
-// openNDS có thể tự nối hậu tố " Node:<MAC>" vào gatewayname.
-// Ví dụ: "comtam-q1%20Node%3ac4411e6300e4%20" -> "comtam-q1"
 function normalizeGatewayName(value) {
   return safeDecodeURIComponent(value)
     .trim()
     .replace(/\s+Node:[a-fA-F0-9:-]+\s*$/i, "")
     .trim();
+}
+
+function buildGatewayBaseUrl(gatewayaddress, gatewayport = "2050") {
+  let address = safeDecodeURIComponent(gatewayaddress).trim().replace(/\/+$/, "");
+  const port = String(gatewayport || "2050").trim();
+
+  if (!address) return "";
+
+  // openNDS may send a complete URL or an address that already contains :2050.
+  if (/^https?:\/\//i.test(address)) return address;
+  if (/^\[[0-9a-f:]+\](?::\d+)?$/i.test(address)) {
+    return /\]:\d+$/.test(address) ? `http://${address}` : `http://${address}:${port}`;
+  }
+  if (/:\d+$/.test(address)) return `http://${address}`;
+
+  return `http://${address}:${port}`;
 }
 
 function rhid(hid, key) { return crypto.createHash("sha256").update(hid+key).digest("hex"); }
@@ -52,30 +67,88 @@ function adminAuth(req, res, next) {
 /* ── Portal / FAS ────────────────────────────────────────────── */
 app.get("/fas", (req, res) => {
   const p = req.query.fas ? parseFasParam(req.query.fas) : req.query;
-  if (!p?.hid || !p?.gatewayname) return res.status(400).render("error",{message:"Thiếu thông tin từ router."});
+  if (!p?.hid || !p?.gatewayname) {
+    return res.status(400).render("error", { message: "Thiếu thông tin từ router." });
+  }
 
   const gatewayname = normalizeGatewayName(p.gatewayname);
   const loc = store.findLocationByGateway(gatewayname);
-  if (!loc) return res.status(404).render("error",{message:`Chưa khai báo quán "${gatewayname}".`});
-  res.render("portal",{ location:loc, hid:p.hid, gatewayname,
-    gatewayaddress:p.gatewayaddress||"", gatewayport:p.gatewayport||"2050",
-    clientmac:p.clientmac||"", clientip:p.clientip||"",
-    originurl:p.originurl||"http://google.com", error:null });
+
+  if (!loc) {
+    return res.status(404).render("error", { message: `Chưa khai báo quán "${gatewayname}".` });
+  }
+
+  return res.render("portal", {
+    location: loc,
+    hid: p.hid,
+    gatewayname,
+    gatewayaddress: safeDecodeURIComponent(p.gatewayaddress || ""),
+    gatewayport: p.gatewayport || "2050",
+    clientmac: p.clientmac || "",
+    clientip: p.clientip || "",
+    originurl: safeDecodeURIComponent(p.originurl || "http://neverssl.com"),
+    error: null
+  });
 });
 
 app.post("/auth", (req, res) => {
-  const { hid, gatewayname:rawGatewayName, gatewayaddress, gatewayport, clientmac, clientip, originurl, phone, name } = req.body;
+  const {
+    hid,
+    gatewayname: rawGatewayName,
+    gatewayaddress,
+    gatewayport,
+    clientmac,
+    clientip,
+    originurl,
+    phone,
+    name
+  } = req.body;
+
   const gatewayname = normalizeGatewayName(rawGatewayName);
   const loc = store.findLocationByGateway(gatewayname);
-  if (!loc || !hid || !gatewayaddress) return res.status(400).render("error",{message:"Phiên không hợp lệ."});
-  if (!validPhone(phone)) return res.render("portal",{ location:loc, hid, gatewayname, gatewayaddress, gatewayport,
-    clientmac, clientip, originurl, error:"Số điện thoại chưa đúng, bạn kiểm tra lại giúp mình nha!" });
+
+  if (!loc || !hid || !gatewayaddress) {
+    return res.status(400).render("error", { message: "Phiên không hợp lệ." });
+  }
+
+  if (!validPhone(phone)) {
+    return res.render("portal", {
+      location: loc,
+      hid,
+      gatewayname,
+      gatewayaddress,
+      gatewayport: gatewayport || "2050",
+      clientmac,
+      clientip,
+      originurl,
+      error: "Số điện thoại chưa đúng, bạn kiểm tra lại giúp mình nha!"
+    });
+  }
+
   const ph = normPhone(phone);
-  const cid = store.upsertCustomer(ph, (name||"").trim().slice(0,60), loc.id);
+  const customerName = (name || "").trim().slice(0, 60);
+  const cid = store.upsertCustomer(ph, customerName, loc.id);
   const cnt = store.logVisit(cid, loc.id, clientmac, clientip);
-  zalo.onVisit({ customerId:cid, phone:ph, name:(name||"").trim(), locationName:loc.display_name, visitCount:cnt }).catch(()=>{});
-  const authUrl = `http://${gatewayaddress}:${gatewayport}/opennds_auth/?tok=${rhid(hid,loc.faskey)}&redir=${encodeURIComponent(originurl||"http://google.com")}`;
-  res.render("success",{ location:loc, authUrl });
+
+  zalo.onVisit({
+    customerId: cid,
+    phone: ph,
+    name: customerName,
+    locationName: loc.display_name,
+    visitCount: cnt
+  }).catch(() => {});
+
+  const gatewayBaseUrl = buildGatewayBaseUrl(gatewayaddress, gatewayport);
+  if (!gatewayBaseUrl) {
+    return res.status(400).render("error", { message: "Không xác định được địa chỉ router." });
+  }
+
+  const redirectUrl = safeDecodeURIComponent(originurl || "http://neverssl.com");
+  const token = rhid(hid, loc.faskey);
+  const authUrl = `${gatewayBaseUrl}/opennds_auth/?tok=${encodeURIComponent(token)}&redir=${encodeURIComponent(redirectUrl)}`;
+
+  console.log("openNDS auth URL:", authUrl);
+  return res.redirect(302, authUrl);
 });
 
 /* ── Preview standalone (không cần FAS) ─────────────────────── */
