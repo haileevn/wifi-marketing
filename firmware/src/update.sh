@@ -54,6 +54,27 @@ if command -v service >/dev/null 2>&1; then
   fi
 fi
 
+# Binauth + authmon (session ended_at chính xác)
+if [ -f "./h2t-binauth.sh" ]; then
+  mkdir -p /etc/opennds
+  cp ./h2t-binauth.sh /etc/opennds/h2t-binauth.sh
+  chmod 755 /etc/opennds/h2t-binauth.sh
+  uci set opennds.@opennds[0].binauth='/etc/opennds/h2t-binauth.sh' 2>/dev/null || true
+  uci commit opennds 2>/dev/null || true
+fi
+if [ -f "./h2t-authmon.sh" ]; then
+  cp ./h2t-authmon.sh /etc/opennds/h2t-authmon.sh
+  chmod 755 /etc/opennds/h2t-authmon.sh
+  opkg install cron 2>/dev/null || true
+  /etc/init.d/cron enable 2>/dev/null; /etc/init.d/cron start 2>/dev/null || true
+  mkdir -p /etc/crontabs
+  touch /etc/crontabs/root
+  grep -v h2t-authmon /etc/crontabs/root > /tmp/h2t-cron.tmp 2>/dev/null || true
+  mv /tmp/h2t-cron.tmp /etc/crontabs/root 2>/dev/null || true
+  grep -q h2t-authmon /etc/crontabs/root 2>/dev/null || echo '* * * * * /etc/opennds/h2t-authmon.sh' >> /etc/crontabs/root
+  /etc/init.d/cron restart 2>/dev/null || true
+fi
+
 # Báo version về portal nếu có domain + token báo cáo
 REPORT_URL=""
 DOMAIN=$(cat "$H2T_DIR/portal_domain" 2>/dev/null || true)

@@ -29,14 +29,22 @@ tr:nth-child(even){background:#fafbfc}
 </style>
 </head>
 <body>
+<% const reportQs = [];
+   if (typeof range !== 'undefined' && range) {
+     if (range.from) reportQs.push('from=' + range.from);
+     if (range.to) reportQs.push('to=' + range.to);
+   }
+   const reportQstr = reportQs.length ? '?' + reportQs.join('&') : ''; %>
 <div class="toolbar">
   <button class="btn" type="button" onclick="window.print()">Print / Save PDF</button>
-  <a class="btn btn-outline" href="/admin/survey/<%= location.id %>/export.csv">Download CSV</a>
+  <a class="btn btn-outline" href="/admin/survey/<%= location.id %>/export.csv<%= reportQstr %>">Download CSV</a>
   <a class="btn btn-outline" href="/admin/survey/<%= location.id %>">← Back</a>
 </div>
 
 <h1>Survey Report</h1>
-<p class="meta"><%= location.display_name %> · <%= new Date().toLocaleString('vi-VN') %> · <%= rows.length %> responses</p>
+<p class="meta"><%= location.display_name %> · <%= new Date().toLocaleString('vi-VN') %>
+  <% if (range && (range.from || range.to)) { %> · <b><%= range.from || '…' %></b> → <b><%= range.to || '…' %></b><% } %>
+  · <%= rows.length %> responses</p>
 
 <% if (stats && stats.length) { %>
 <div class="section">

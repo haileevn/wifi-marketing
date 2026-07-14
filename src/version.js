@@ -48,11 +48,9 @@ function buildFirmwarePackage({ changelog = "", portalDomain = "" } = {}) {
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(staging, { recursive: true });
 
-  // Copy nguồn
-  for (const name of ["update.sh", "h2t-check-update.sh"]) {
-    const src = path.join(FW_SRC, name);
-    if (!fs.existsSync(src)) throw new Error(`Thiếu ${src}`);
-    fs.copyFileSync(src, path.join(staging, name));
+  // Copy nguồn — mọi script .sh trong firmware/src
+  for (const name of fs.readdirSync(FW_SRC).filter((f) => f.endsWith(".sh"))) {
+    fs.copyFileSync(path.join(FW_SRC, name), path.join(staging, name));
   }
   fs.writeFileSync(path.join(staging, "VERSION"), version + "\n");
   if (portalDomain) {

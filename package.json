@@ -1,6 +1,6 @@
 {
   "name": "h2t-wifi-marketing",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "He thong WiFi Marketing multi-tenant cho chuoi quan an - OpenNDS FAS server",
   "main": "src/server.js",
   "scripts": {

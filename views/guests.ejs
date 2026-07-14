@@ -35,6 +35,13 @@ tr.clickable:hover{background:#f8fafc}
 .ans{background:#f8fafc;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}
 .close{float:right;background:none;border:none;font-size:20px;cursor:pointer;color:#64748b}
 .mac{font-family:monospace;font-size:11px}
+.badge-src-authmon{background:#dbeafe;color:#1d4ed8}
+.badge-src-binauth{background:#ede9fe;color:#6d28d9}
+.badge-src-cron_sync{background:#fef3c7;color:#b45309}
+.badge-src-admin{background:#fee2e2;color:#b91c1c}
+.badge-src-webhook{background:#f1f5f9;color:#64748b}
+.stats-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px}
+.stat-pill{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-weight:600}
 .saved{background:#d1fae5;color:#065f46;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:12px}
 </style>
 </head>
@@ -59,6 +66,17 @@ tr.clickable:hover{background:#f8fafc}
     <span style="font-size:12px;color:#64748b"><%= groups.length %> khách (đã gộp theo SĐT + quán) · Auto-sync 2 phút</span>
     <button class="btn btn-outline" type="button" id="syncBtn" style="padding:6px 12px;font-size:12px">↻ Sync ngay</button>
   </div>
+
+  <% if (endStats && endStats.total > 0) { %>
+  <div class="stats-row">
+    <span style="font-size:11px;color:#64748b;align-self:center">Session end source:</span>
+    <% const srcLabels = { authmon: 'Authmon 60s', binauth: 'Binauth', cron_sync: 'Cron 2min', admin: 'Admin', webhook: 'Webhook' };
+       (endStats.rows || []).forEach(r => { %>
+      <span class="stat-pill badge-src-<%= r.end_source %>"><%= srcLabels[r.end_source] || r.end_source %>: <%= r.cnt %></span>
+    <% }) %>
+    <span class="stat-pill" style="color:#64748b">Total ended: <%= endStats.total %></span>
+  </div>
+  <% } %>
 
   <table>
     <tr>
@@ -123,9 +141,13 @@ async function openDetail(cid, lid, mac, online) {
   if (!res.sessions.length) html += '<p style="color:#94a3b8;font-size:12px">Chưa có phiên.</p>';
   res.sessions.forEach(s => {
     const dur = s.duration_min != null ? ` · ${s.duration_min} phút` : (s.status === 'active' ? ' · đang online' : '');
+    const srcMap = { authmon: 'Authmon', binauth: 'Binauth', cron_sync: 'Cron 2min', admin: 'Admin', webhook: 'Webhook' };
+    const src = s.end_source ? (srcMap[s.end_source] || s.end_source) : '';
+    const srcBadge = src ? `<span class="badge badge-src-${s.end_source}">${src}</span>` : '';
+    const ev = s.end_event ? ` <span style="color:#94a3b8">(${s.end_event})</span>` : '';
     html += `<div class="sess">
-      <b>#${s.id}</b> Vào: ${s.created_at}<br>
-      Ra: ${s.ended_at || '—'}${dur}<br>
+      <b>#${s.id}</b> ${srcBadge} Vào: ${s.created_at}<br>
+      Ra: ${s.ended_at || '—'}${dur}${ev}<br>
       MAC: <span class="mac">${s.client_mac||'—'}</span> · IP: ${s.client_ip||'—'}
     </div>`;
   });

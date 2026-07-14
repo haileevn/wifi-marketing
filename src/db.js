@@ -144,6 +144,8 @@ const visitCols = db.prepare("PRAGMA table_info(visits)").all().map(c => c.name)
 const visitNewCols = [
   ["ended_at", "TEXT DEFAULT NULL"],
   ["status", "TEXT DEFAULT 'active'"],
+  ["end_source", "TEXT DEFAULT NULL"],
+  ["end_event", "TEXT DEFAULT NULL"],
 ];
 for (const [col, def] of visitNewCols) {
   if (!visitCols.includes(col)) {
@@ -294,19 +296,21 @@ module.exports = {
     return { visitId, merged: false, count: n };
   },
 
-  endVisitsByMac(locationId, mac) {
+  endVisitsByMac(locationId, mac, { source = "unknown", event = "" } = {}) {
     const m = String(mac || "").toLowerCase();
     return db.prepare(`
-      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
+      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended',
+        end_source=?, end_event=?
       WHERE location_id=? AND lower(client_mac)=? AND ended_at IS NULL
-    `).run(locationId, m).changes;
+    `).run(source, String(event || "").slice(0, 80), locationId, m).changes;
   },
 
-  endVisitById(visitId) {
+  endVisitById(visitId, { source = "admin", event = "" } = {}) {
     return db.prepare(`
-      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
+      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended',
+        end_source=?, end_event=?
       WHERE id=? AND ended_at IS NULL
-    `).run(visitId).changes;
+    `).run(source, String(event || "").slice(0, 80), visitId).changes;
   },
 
   /** Đóng phiên active khi MAC không còn trong danh sách online (cron sync) */
@@ -317,7 +321,8 @@ module.exports = {
       WHERE location_id=? AND ended_at IS NULL AND status='active'
     `).all(locationId);
     const end = db.prepare(`
-      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
+      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended',
+        end_source='cron_sync', end_event='offline_poll'
       WHERE id=? AND ended_at IS NULL
     `);
     let n = 0;
@@ -335,16 +340,31 @@ module.exports = {
     return module.exports.findLocationByGateway(gatewayName);
   },
 
-  surveyAnswerStats(locationId) {
+  _surveyDateFilter({ from = null, to = null } = {}) {
+    const parts = [];
+    const params = [];
+    if (from) {
+      parts.push("date(sa.created_at) >= date(?)");
+      params.push(from);
+    }
+    if (to) {
+      parts.push("date(sa.created_at) <= date(?)");
+      params.push(to);
+    }
+    return { sql: parts.length ? ` AND ${parts.join(" AND ")}` : "", params };
+  },
+
+  surveyAnswerStats(locationId, { from = null, to = null } = {}) {
+    const df = module.exports._surveyDateFilter({ from, to });
     const rows = db.prepare(`
       SELECT sq.id AS question_id, sq.question_text, sq.question_type,
              sa.answer_text, COUNT(*) AS cnt
       FROM survey_answers sa
       JOIN survey_questions sq ON sq.id = sa.question_id
-      WHERE sa.location_id = ?
+      WHERE sa.location_id = ?${df.sql}
       GROUP BY sq.id, sa.answer_text
       ORDER BY sq.sort_order, sq.id, cnt DESC
-    `).all(locationId);
+    `).all(locationId, ...df.params);
     const byQ = {};
     for (const r of rows) {
       if (!byQ[r.question_id]) {
@@ -362,15 +382,31 @@ module.exports = {
     return Object.values(byQ);
   },
 
-  exportSurveyAnswers(locationId) {
+  exportSurveyAnswers(locationId, { from = null, to = null } = {}) {
+    const df = module.exports._surveyDateFilter({ from, to });
     return db.prepare(`
       SELECT sa.created_at, c.phone, c.name, sq.question_text, sq.question_type, sa.answer_text
       FROM survey_answers sa
       JOIN customers c ON c.id = sa.customer_id
       JOIN survey_questions sq ON sq.id = sa.question_id
-      WHERE sa.location_id = ?
+      WHERE sa.location_id = ?${df.sql}
       ORDER BY sa.created_at DESC, sa.id DESC
-    `).all(locationId);
+    `).all(locationId, ...df.params);
+  },
+
+  getSessionEndStats(locationId = null) {
+    const where = locationId
+      ? "WHERE location_id=? AND ended_at IS NOT NULL AND end_source IS NOT NULL"
+      : "WHERE ended_at IS NOT NULL AND end_source IS NOT NULL";
+    const params = locationId ? [locationId] : [];
+    const rows = db.prepare(`
+      SELECT end_source, COUNT(*) AS cnt
+      FROM visits ${where}
+      GROUP BY end_source
+      ORDER BY cnt DESC
+    `).all(...params);
+    const total = rows.reduce((s, r) => s + r.cnt, 0);
+    return { rows, total };
   },
 
   listGuestGroups({ locationId = null, limit = 100 } = {}) {
@@ -400,6 +436,7 @@ module.exports = {
     if (!customer || !location) return null;
     const sessions = db.prepare(`
       SELECT v.id, v.created_at, v.ended_at, v.status, v.client_mac, v.client_ip,
+        v.end_source, v.end_event,
         CASE WHEN v.ended_at IS NOT NULL
           THEN CAST((julianday(v.ended_at) - julianday(v.created_at)) * 24 * 60 AS INTEGER)
           ELSE NULL END AS duration_min

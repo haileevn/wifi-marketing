@@ -23,6 +23,21 @@ app.use(express.json({ limit: "8mb" }));
 const PORT = process.env.PORT || 20140;
 const publicLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
 
+function resolveSessionEndSource(event) {
+  const e = String(event || "").toLowerCase();
+  if (e === "authmon_offline") return { source: "authmon", event: e };
+  if (/deauth|logout|timeout|session|ndsctl|idle/.test(e)) return { source: "binauth", event: e };
+  return { source: "webhook", event: e || "logout" };
+}
+
+function parseSurveyRange(q) {
+  const from = String(q.from || "").trim().slice(0, 10) || null;
+  const to = String(q.to || "").trim().slice(0, 10) || null;
+  if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) return { from: null, to };
+  if (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) return { from, to: null };
+  return { from, to };
+}
+
 if (!secrets.isConfigured()) {
   console.warn("[security] SECRETS_KEY chưa cấu hình (≥16 ký tự) — SSH password lưu plaintext trong DB.");
 }
@@ -274,6 +289,7 @@ app.get("/admin/guests", adminAuth, async (req, res) => {
   res.render("guests", {
     groups, locations: store.listLocations(),
     filterLocation: locId, saved: req.query.saved === "1",
+    endStats: store.getSessionEndStats(locId),
   });
 });
 
@@ -294,7 +310,7 @@ app.post("/admin/guests/disconnect", adminAuth, async (req, res) => {
   if (!router?.ssh_host) return res.json({ ok: false, error: "Router chưa kết nối SSH." });
   try {
     await routerCtl.disconnectClient(router, mac);
-    store.endVisitsByMac(locationId, mac);
+    store.endVisitsByMac(locationId, mac, { source: "admin", event: "ndsctl_deauth" });
     res.json({ ok: true, customer_id: customerId });
   } catch (e) {
     res.json({ ok: false, error: e.message });
@@ -305,10 +321,12 @@ app.post("/admin/guests/disconnect", adminAuth, async (req, res) => {
 app.get("/admin/survey/:id", adminAuth, (req, res) => {
   const loc = store.findLocationById(req.params.id);
   if (!loc) return res.redirect("/admin");
+  const range = parseSurveyRange(req.query);
   res.render("survey-admin", {
     location: loc,
     questions: store.listSurveyQuestions(loc.id),
-    stats: store.surveyAnswerStats(loc.id),
+    stats: store.surveyAnswerStats(loc.id, range),
+    range,
     saved: req.query.saved === "1",
   });
 });
@@ -346,12 +364,14 @@ app.post("/admin/survey/:id/:qid/delete", adminAuth, (req, res) => {
 app.get("/admin/survey/:id/export.csv", adminAuth, (req, res) => {
   const loc = store.findLocationById(req.params.id);
   if (!loc) return res.status(404).send("Not found");
-  const rows = store.exportSurveyAnswers(loc.id);
+  const range = parseSurveyRange(req.query);
+  const rows = store.exportSurveyAnswers(loc.id, range);
   const esc = (s) => `"${String(s || "").replace(/"/g, '""')}"`;
   const body = rows.map(r =>
     [r.created_at, r.phone, r.name, r.question_text, r.answer_text].map(esc).join(",")
   ).join("\n");
-  const fname = `khao-sat-${loc.gateway_name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  const tag = range.from || range.to ? `${range.from || "start"}_${range.to || "end"}` : new Date().toISOString().slice(0, 10);
+  const fname = `khao-sat-${loc.gateway_name}-${tag}.csv`;
   res.set("Content-Type", "text/csv; charset=utf-8")
     .set("Content-Disposition", `attachment; filename=${fname}`);
   res.send("\uFEFF" + "thoi_gian,phone,name,cau_hoi,tra_loi\n" + body);
@@ -360,10 +380,12 @@ app.get("/admin/survey/:id/export.csv", adminAuth, (req, res) => {
 app.get("/admin/survey/:id/report", adminAuth, (req, res) => {
   const loc = store.findLocationById(req.params.id);
   if (!loc) return res.redirect("/admin");
+  const range = parseSurveyRange(req.query);
   res.render("survey-report", {
     location: loc,
-    stats: store.surveyAnswerStats(loc.id),
-    rows: store.exportSurveyAnswers(loc.id),
+    stats: store.surveyAnswerStats(loc.id, range),
+    rows: store.exportSurveyAnswers(loc.id, range),
+    range,
   });
 });
 
@@ -493,7 +515,7 @@ app.post("/admin/router/:id/disconnect", adminAuth, async (req, res) => {
   if (!router) return res.json({ ok:false, error:"Chưa cấu hình router." });
   try {
     const out = await routerCtl.disconnectClient(router, req.body.mac);
-    store.endVisitsByMac(Number(req.params.id), req.body.mac);
+    store.endVisitsByMac(Number(req.params.id), req.body.mac, { source: "admin", event: "ndsctl_deauth" });
     res.json({ ok:true, out });
   } catch (e) {
     res.json({ ok:false, error: e.message });
@@ -724,8 +746,8 @@ app.post("/api/session/end", publicLimiter, (req, res) => {
   if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(mac)) {
     return res.status(400).json({ ok: false, error: "invalid mac" });
   }
-  const ended = store.endVisitsByMac(loc.id, mac);
-  res.json({ ok: true, ended, event, location_id: loc.id });
+  const ended = store.endVisitsByMac(loc.id, mac, resolveSessionEndSource(event));
+  res.json({ ok: true, ended, event, location_id: loc.id, ...resolveSessionEndSource(event) });
 });
 
 app.post("/admin/session/sync", adminAuth, async (req, res) => {
