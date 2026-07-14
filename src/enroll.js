@@ -84,38 +84,40 @@ chmod 600 /etc/dropbear/authorized_keys
 echo "[4/6] Cài Tailscale cho OpenWrt..."
 install_tailscale_openwrt() {
   opkg update >/dev/null 2>&1 || true
+  # Dependencies bắt buộc trên OpenWrt 23.05 (nft): thiếu iptables → tailscaled thoát ngay
   opkg install kmod-tun ca-bundle 2>/dev/null || true
-  # 1) thử feed chính (một số build còn package)
+  opkg install iptables-nft ip6tables-nft iptables-mod-conntrack-extra 2>/dev/null \\
+    || opkg install iptables ip6tables 2>/dev/null || true
+  modprobe tun 2>/dev/null || insmod tun 2>/dev/null || true
+  mkdir -p /var/run/tailscale /var/lib/tailscale
+
+  # 1) feed chính
   if opkg list-installed 2>/dev/null | grep -q '^tailscale '; then
     return 0
   fi
   if opkg install tailscale 2>/dev/null; then
     return 0
   fi
-  # 2) IPK community theo OPENWRT_ARCH (vd mipsel_24kc)
+  # 2) IPK community (nhẹ hơn — router RAM nhỏ)
   ARCH=\$(. /etc/os-release 2>/dev/null; echo "\${OPENWRT_ARCH:-}")
   [ -n "\$ARCH" ] || ARCH=\$(opkg print-architecture 2>/dev/null | awk '\$1=="arch"{print \$2; exit}')
   [ -n "\$ARCH" ] || ARCH=mipsel_24kc
   VER="${tsVer}"
-  IPK="tailscale_\${VER}_\${ARCH}.ipk"
-  URL1="https://github.com/GuNanOvO/openwrt-tailscale/releases/download/v\${VER}/\${IPK}"
-  # mirror (GitHub có thể chậm từ VN)
-  URL2="https://ghfast.top/https://github.com/GuNanOvO/openwrt-tailscale/releases/download/v\${VER}/\${IPK}"
-  echo "  Arch=\$ARCH → tải \$IPK"
-  cd /tmp
-  rm -f "\$IPK"
-  if command -v uclient-fetch >/dev/null 2>&1; then
-    uclient-fetch -q -O "\$IPK" "\$URL1" || uclient-fetch -q -O "\$IPK" "\$URL2" || true
-  else
-    wget -qO "\$IPK" "\$URL1" || wget -qO "\$IPK" "\$URL2" || true
-  fi
-  if [ ! -s "\$IPK" ]; then
-    echo "!! Không tải được Tailscale IPK cho arch \$ARCH"
-    echo "!! Tải tay: \$URL1"
-    echo "!! Rồi: opkg install kmod-tun && opkg install /tmp/\$IPK"
-    return 1
-  fi
-  opkg install "/tmp/\$IPK" || opkg install --force-overwrite "/tmp/\$IPK"
+  for CAND in "tailscale_\${VER}_\${ARCH}.ipk" "tailscale_\${VER}_\${ARCH}_24kf.ipk"; do
+    URL1="https://github.com/GuNanOvO/openwrt-tailscale/releases/download/v\${VER}/\${CAND}"
+    URL2="https://ghfast.top/https://github.com/GuNanOvO/openwrt-tailscale/releases/download/v\${VER}/\${CAND}"
+    echo "  Thử \$CAND..."
+    cd /tmp
+    rm -f "\$CAND"
+    uclient-fetch -q -O "\$CAND" "\$URL1" 2>/dev/null || wget -qO "\$CAND" "\$URL1" 2>/dev/null \\
+      || uclient-fetch -q -O "\$CAND" "\$URL2" 2>/dev/null || wget -qO "\$CAND" "\$URL2" 2>/dev/null || true
+    [ -s "\$CAND" ] || continue
+    if opkg install --force-depends --force-overwrite "/tmp/\$CAND" 2>/dev/null; then
+      return 0
+    fi
+  done
+  echo "!! Không cài được Tailscale IPK"
+  return 1
 }
 
 if ! command -v tailscale >/dev/null 2>&1; then
@@ -125,23 +127,37 @@ if ! command -v tailscale >/dev/null 2>&1; then
   }
 fi
 
-# Khởi động daemon (OpenWrt package: /etc/init.d/tailscale → tailscaled)
+# Khởi động daemon (state mặc định OpenWrt: /etc/tailscale/tailscaled.state)
+mkdir -p /etc/tailscale /var/run/tailscale
+# nftables OpenWrt 23.05 — bắt buộc để tailscaled không thoát ngay
+export TS_DEBUG_FIREWALL_MODE=auto
+uci -q set tailscale.settings.state_file='/etc/tailscale/tailscaled.state' || true
+uci -q commit tailscale 2>/dev/null || true
 /etc/init.d/tailscale enable 2>/dev/null || true
 /etc/init.d/tailscale stop 2>/dev/null || true
-/etc/init.d/tailscale start 2>/dev/null || service tailscale start 2>/dev/null || {
-  # fallback trực tiếp
-  mkdir -p /var/lib/tailscale /var/run
-  (tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock >/tmp/tailscaled.log 2>&1 &) || true
+/etc/init.d/tailscale start 2>/dev/null || {
+  echo "!! init.d start fail — chạy tay tailscaled"
+  TS_DEBUG_FIREWALL_MODE=auto /usr/sbin/tailscaled \\
+    --state=/etc/tailscale/tailscaled.state --port=41641 >/tmp/tailscaled.log 2>&1 &
 }
-# Đợi sock sẵn sàng (tối đa ~20s)
+# Đợi sock sẵn sàng (tối đa ~25s)
 i=0
-while [ \$i -lt 20 ]; do
-  if tailscale status >/dev/null 2>&1 || [ -S /var/run/tailscale/tailscaled.sock ] || [ -S /tmp/tailscaled.sock ]; then
-    break
+while [ \$i -lt 25 ]; do
+  if tailscale status >/dev/null 2>&1; then break; fi
+  if [ -S /var/run/tailscale/tailscaled.sock ]; then
+    # sock có nhưng CLI chưa sẵn — đợi thêm
+    sleep 1; break
   fi
   i=\$((i+1)); sleep 1
 done
 sleep 1
+if ! tailscale status >/dev/null 2>&1; then
+  echo "!! tailscaled chưa chạy. Log:"
+  logread 2>/dev/null | grep -i tailscale | tail -20 || true
+  cat /tmp/tailscaled.log 2>/dev/null | tail -30 || true
+  echo "!! Cài iptables: opkg install iptables-nft ip6tables-nft kmod-tun"
+  exit 1
+fi
 # Auth key chỉ dùng trong biến — không echo
 TS_AUTHKEY='${tsKey}'
 if [ -z "\$TS_AUTHKEY" ]; then
