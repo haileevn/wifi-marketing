@@ -131,6 +131,7 @@ const newCols = [
   ["google_review_url", "TEXT DEFAULT ''"],
   ["survey_enabled", "INTEGER DEFAULT 0"],
   ["survey_title", "TEXT DEFAULT 'Khảo sát nhanh'"],
+  ["cover_data", "TEXT DEFAULT ''"],
 ];
 for (const [col, def] of newCols) {
   if (!existingCols.includes(col)) {
@@ -251,10 +252,9 @@ module.exports = {
   updateLocationDesign(id, d) {
     db.prepare(`UPDATE locations SET
       display_name=@display_name, promo_text=@promo_text, zalo_link=@zalo_link,
-      accent_color=@accent_color, logo_data=@logo_data, bg_color=@bg_color,
-      card_color=@card_color, text_color=@text_color, headline=@headline,
-      btn_text=@btn_text, show_name=@show_name, require_name=@require_name,
-      custom_css=@custom_css, template_id=@template_id,
+      accent_color=@accent_color, logo_data=@logo_data, cover_data=@cover_data,
+      bg_color=@bg_color, card_color=@card_color, text_color=@text_color,
+      headline=@headline, btn_text=@btn_text, show_name=@show_name, require_name=@require_name,
       custom_css=@custom_css, template_id=@template_id,
       success_redirect=@success_redirect,
       google_review_url=@google_review_url, survey_enabled=@survey_enabled, survey_title=@survey_title
@@ -307,6 +307,59 @@ module.exports = {
       UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
       WHERE id=? AND ended_at IS NULL
     `).run(visitId).changes;
+  },
+
+  /** Đóng phiên active khi MAC không còn trong danh sách online (cron sync) */
+  endStaleActiveVisits(locationId, onlineMacs) {
+    const set = new Set((onlineMacs || []).map((m) => String(m).toLowerCase()));
+    const active = db.prepare(`
+      SELECT id, client_mac FROM visits
+      WHERE location_id=? AND ended_at IS NULL AND status='active'
+    `).all(locationId);
+    const end = db.prepare(`
+      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
+      WHERE id=? AND ended_at IS NULL
+    `);
+    let n = 0;
+    for (const v of active) {
+      const mac = String(v.client_mac || "").toLowerCase();
+      if (mac && !set.has(mac)) {
+        end.run(v.id);
+        n++;
+      }
+    }
+    return n;
+  },
+
+  findLocationByGatewayForSession(gatewayName) {
+    return module.exports.findLocationByGateway(gatewayName);
+  },
+
+  surveyAnswerStats(locationId) {
+    const rows = db.prepare(`
+      SELECT sq.id AS question_id, sq.question_text, sq.question_type,
+             sa.answer_text, COUNT(*) AS cnt
+      FROM survey_answers sa
+      JOIN survey_questions sq ON sq.id = sa.question_id
+      WHERE sa.location_id = ?
+      GROUP BY sq.id, sa.answer_text
+      ORDER BY sq.sort_order, sq.id, cnt DESC
+    `).all(locationId);
+    const byQ = {};
+    for (const r of rows) {
+      if (!byQ[r.question_id]) {
+        byQ[r.question_id] = {
+          question_id: r.question_id,
+          question_text: r.question_text,
+          question_type: r.question_type,
+          total: 0,
+          answers: [],
+        };
+      }
+      byQ[r.question_id].total += r.cnt;
+      byQ[r.question_id].answers.push({ text: r.answer_text, count: r.cnt });
+    }
+    return Object.values(byQ);
   },
 
   listGuestGroups({ locationId = null, limit = 100 } = {}) {

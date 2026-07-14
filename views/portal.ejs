@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" class="theme-<%= typeof templateId !== 'undefined' ? templateId : (location.template_id || 'classic') %>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
@@ -14,6 +14,7 @@
   --muted: color-mix(in srgb, var(--ink) 55%, transparent);
   --line: color-mix(in srgb, var(--ink) 10%, transparent);
   --radius: 16px;
+  <% if (location.cover_data) { %>--cover: url(<%- location.cover_data %>);<% } %>
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -34,6 +35,11 @@ body{
   color:#fff;padding:32px 28px 40px;
   display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
 }
+.brand.has-cover{
+  background-image:linear-gradient(165deg,rgba(0,0,0,.62) 0%,rgba(0,0,0,.38) 50%,rgba(0,0,0,.5) 100%),var(--cover);
+  background-size:cover;background-position:center;
+}
+.brand.has-cover::before{opacity:.08}
 @media(min-width:720px){
   .brand{flex:0 0 42%;max-width:480px;min-height:100vh;padding:48px 40px}
 }
@@ -43,7 +49,7 @@ body{
              radial-gradient(circle at 80% 20%,#fff 0%,transparent 40%);
   pointer-events:none;
 }
-.brand-inner{position:relative;z-index:1;max-width:320px;width:100%}
+.brand-inner{position:relative;z-index:1;max-width:320px;width:100%;animation:fadeUp .42s ease-out both}
 .wifi-badge{
   display:inline-flex;align-items:center;gap:8px;
   background:rgba(255,255,255,.18);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
@@ -79,7 +85,15 @@ body{
 @media(min-width:720px){
   .main{padding:48px 56px;max-width:560px}
 }
-.form-shell{width:100%;max-width:400px;margin:0 auto}
+.form-shell{width:100%;max-width:400px;margin:0 auto;animation:fadeUp .48s ease-out .12s both}
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .brand-inner,.form-shell{animation:none}
+  .btn-submit{transition:none}
+}
 .form-head{margin-bottom:24px}
 .form-head .step{
   font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
@@ -180,13 +194,14 @@ form{display:flex;flex-direction:column;gap:16px}
 }
 
 @media(prefers-reduced-motion:reduce){.btn-submit{transition:none}}
+<%- typeof themeCss !== 'undefined' ? themeCss : '' %>
 <%- location.custom_css ? location.custom_css : '' %>
 </style>
 </head>
 <body>
 <div class="page">
   <!-- Brand -->
-  <aside class="brand">
+  <aside class="brand<%= location.cover_data ? ' has-cover' : '' %>">
     <div class="brand-inner">
       <div class="wifi-badge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">

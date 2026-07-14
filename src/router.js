@@ -15,6 +15,39 @@
  */
 const { NodeSSH } = require("node-ssh");
 
+function binauthInstallCmds(location, domain, reportToken) {
+  const gw = esc(location.gateway_name);
+  const dom = esc(domain);
+  const tok = esc(reportToken || "");
+  const script = `#!/bin/sh
+# H2T WiFi — binauth webhook (logout/timeout → portal)
+METHOD="\${1:-}"
+MAC="\${2:-}"
+[ -z "$MAC" ] && MAC="\${clientmac:-\${nds_client_mac:-}}"
+GATEWAY='${gw}'
+TOKEN='${tok}'
+DOMAIN='${dom}'
+case "$METHOD" in
+  auth_client|client_auth|authenticate) exit 0 ;;
+  client_deauth|deauth|logout|timeout|idle_timeout|session_end|ndsctl_deauth)
+    if [ -n "$MAC" ] && [ -n "$TOKEN" ]; then
+      DATA="token=$TOKEN&mac=$MAC&event=$METHOD&gateway_name=$GATEWAY"
+      (wget -q -O - --post-data="$DATA" "https://$DOMAIN/api/session/end" 2>/dev/null \\
+        || uclient-fetch -q -O - --post-data="$DATA" "https://$DOMAIN/api/session/end" 2>/dev/null \\
+        || curl -fsS -X POST -d "$DATA" "https://$DOMAIN/api/session/end" 2>/dev/null) || true
+    fi
+    exit 0 ;;
+esac
+exit 0
+`;
+  return [
+    "mkdir -p /etc/opennds",
+    `cat > /etc/opennds/h2t-binauth.sh << 'H2TBINAUTH'\n${script}\nH2TBINAUTH`,
+    "chmod +x /etc/opennds/h2t-binauth.sh",
+    `uci set opennds.@opennds[0].binauth='/etc/opennds/h2t-binauth.sh'`,
+  ];
+}
+
 async function connect(router) {
   const ssh = new NodeSSH();
   const opts = {
@@ -54,13 +87,13 @@ async function testConnection(router) {
 
 /* ── Đẩy cấu hình OpenNDS xuống router ────────────────────── */
 // domain: domain portal (vd wifi.06.com.vn), phải chạy plain HTTP path /fas /auth (xem README)
-async function pushOpenNDSConfig(router, location, domain, sessionMinutes = 720) {
+async function pushOpenNDSConfig(router, location, domain, sessionMinutes = 720, reportToken = "") {
   const cmds = [
     "opkg update >/dev/null 2>&1 || true",
     // OpenWrt 23.05/nft: cần dnsmasq-full cho walled garden + ipset/nftset
     "opkg list-installed | grep -q '^dnsmasq-full ' || (opkg remove dnsmasq --force-depends 2>/dev/null; opkg install dnsmasq-full)",
     "opkg list-installed | grep -q opennds || opkg install opennds ca-bundle",
-    "opkg install iptables-nft ip6tables-nft kmod-tun 2>/dev/null || true",
+    "opkg install iptables-nft ip6tables-nft kmod-tun wget curl 2>/dev/null || true",
     `uci set opennds.@opennds[0].enabled='1'`,
     `uci set opennds.@opennds[0].gatewayname='${esc(location.gateway_name)}'`,
     `uci set opennds.@opennds[0].gatewayinterface='br-lan'`,
@@ -72,8 +105,7 @@ async function pushOpenNDSConfig(router, location, domain, sessionMinutes = 720)
     `uci set opennds.@opennds[0].faskey='${esc(location.faskey)}'`,
     `uci set opennds.@opennds[0].fasssl='1'`,
     `uci set opennds.@opennds[0].sessiontimeout='${Number(sessionMinutes)||720}'`,
-    // Binauth script lỗi thường chặn auth im lặng
-    `uci -q delete opennds.@opennds[0].binauth || true`,
+    ...binauthInstallCmds(location, domain, reportToken),
     `uci -q delete opennds.@opennds[0].walledgarden_fqdn_list`,
     `uci add_list opennds.@opennds[0].walledgarden_fqdn_list='${esc(domain)}'`,
     `uci -q delete opennds.@opennds[0].users_to_router`,

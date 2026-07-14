@@ -10,6 +10,8 @@ const secrets = require("./secrets");
 const { createRateLimiter } = require("./rate-limit");
 const versioning = require("./version");
 const fs = require("fs");
+const { themeCss } = require("./portal-themes");
+const sessionSync = require("./session-sync");
 
 const app = express();
 app.set("view engine", "ejs");
@@ -107,6 +109,16 @@ function adminAuth(req, res, next) {
   res.status(401).send("Yêu cầu đăng nhập");
 }
 
+function portalRenderArgs(loc, extra) {
+  const tid = loc.template_id || "classic";
+  return {
+    location: loc,
+    themeCss: themeCss(tid),
+    templateId: tid,
+    ...extra,
+  };
+}
+
 /* ── Portal / FAS ────────────────────────────────────────────── */
 app.get("/fas", (req, res) => {
   const p = req.query.fas ? parseFasParam(req.query.fas) : req.query;
@@ -114,11 +126,13 @@ app.get("/fas", (req, res) => {
   const loc = store.findLocationByGateway(p.gatewayname);
   if (!loc) return res.status(404).render("error",{message:`Chưa khai báo quán "${p.gatewayname}".`});
   // Luôn dùng gateway_name đã khai trên portal (tránh leak " Node:xxx" vào form /auth)
-  res.render("portal",{ location:loc, hid:p.hid, gatewayname:loc.gateway_name,
+  res.render("portal", portalRenderArgs(loc, {
+    hid:p.hid, gatewayname:loc.gateway_name,
     gatewayaddress:p.gatewayaddress||"", gatewayport:p.gatewayport||"2050",
     clientmac:p.clientmac||"", clientip:p.clientip||"",
     originurl:p.originurl||"http://google.com", error:null,
-    surveyQuestions: loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [] });
+    surveyQuestions: loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [],
+  }));
 });
 
 app.post("/auth", (req, res) => {
@@ -126,18 +140,20 @@ app.post("/auth", (req, res) => {
   const loc = store.findLocationByGateway(gatewayname);
   if (!loc || !hid || !gatewayaddress) return res.status(400).render("error",{message:"Phiên không hợp lệ."});
   const surveyQs = loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [];
-  if (!validPhone(phone)) return res.render("portal",{ location:loc, hid, gatewayname, gatewayaddress, gatewayport,
+  if (!validPhone(phone)) return res.render("portal", portalRenderArgs(loc, {
+    hid, gatewayname, gatewayaddress, gatewayport,
     clientmac, clientip, originurl, surveyQuestions: surveyQs,
-    error:"Số điện thoại chưa đúng, bạn kiểm tra lại giúp mình nha!" });
+    error:"Số điện thoại chưa đúng, bạn kiểm tra lại giúp mình nha!" }));
   // Validate khảo sát bắt buộc
   if (surveyQs.length) {
     for (const q of surveyQs) {
       if (!q.required) continue;
       const ans = String(req.body[`survey_${q.id}`] || "").trim();
       if (!ans) {
-        return res.render("portal",{ location:loc, hid, gatewayname, gatewayaddress, gatewayport,
+        return res.render("portal", portalRenderArgs(loc, {
+          hid, gatewayname, gatewayaddress, gatewayport,
           clientmac, clientip, originurl, surveyQuestions: surveyQs,
-          error:`Vui lòng trả lời: ${q.question_text}` });
+          error:`Vui lòng trả lời: ${q.question_text}` }));
       }
     }
   }
@@ -166,10 +182,12 @@ app.get("/welcome/:id", (req, res) => {
 app.get("/preview/:id", (req, res) => {
   const loc = store.findLocationById(req.params.id);
   if (!loc) return res.status(404).render("error",{message:"Không tìm thấy quán."});
-  res.render("portal",{ location:loc, hid:"preview", gatewayname:loc.gateway_name,
+  res.render("portal", portalRenderArgs(loc, {
+    hid:"preview", gatewayname:loc.gateway_name,
     gatewayaddress:"127.0.0.1", gatewayport:"2050", clientmac:"", clientip:"",
     originurl:"http://google.com", error:null,
-    surveyQuestions: loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [] });
+    surveyQuestions: loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [],
+  }));
 });
 
 /* ── Admin ───────────────────────────────────────────────────── */
@@ -211,6 +229,7 @@ app.post("/admin/editor/:id", adminAuth, (req, res) => {
     google_review_url: (b.google_review_url||"").trim().slice(0,500),
     survey_enabled: b.survey_enabled==="1"?1:0,
     survey_title: (b.survey_title||"Khảo sát nhanh").trim().slice(0,80),
+    cover_data: (b.cover_data||"").slice(0, 800000),
     accent_color: b.accent_color||"#B4452C",
     logo_data:    (b.logo_data||"").slice(0, 500000), // max ~375KB ảnh
     bg_color:     b.bg_color||"#FFF6EC",
@@ -289,6 +308,7 @@ app.get("/admin/survey/:id", adminAuth, (req, res) => {
   res.render("survey-admin", {
     location: loc,
     questions: store.listSurveyQuestions(loc.id),
+    stats: store.surveyAnswerStats(loc.id),
     saved: req.query.saved === "1",
   });
 });
@@ -410,7 +430,8 @@ app.post("/admin/router/:id/push-config", adminAuth, async (req, res) => {
   if (!loc || !router) return res.json({ ok:false, error:"Thiếu thông tin quán hoặc router." });
   try {
     const domain = req.body.domain || req.get("host");
-    const result = await routerCtl.pushOpenNDSConfig(router, loc, domain, req.body.session_minutes);
+    const token = store.ensureReportToken(loc.id);
+    const result = await routerCtl.pushOpenNDSConfig(router, loc, domain, req.body.session_minutes, token);
     store.updateRouterStatus(router.id, JSON.stringify({ lastPush: "ok" }));
     res.json(result);
   } catch (e) {
@@ -662,6 +683,36 @@ app.post("/api/enroll/:token", publicLimiter, (req, res) => {
   res.json({ ok:true, one_shot: (process.env.ENROLL_ONE_SHOT || "1") !== "0", firmware_version: fw?.version || null });
 });
 
+/* ── Session webhook (binauth / router) + manual sync ─────────── */
+app.post("/api/session/end", publicLimiter, (req, res) => {
+  const token = String(req.body.token || req.query.token || "").trim();
+  const mac = String(req.body.mac || "").trim();
+  const gateway = String(req.body.gateway_name || "").trim();
+  const event = String(req.body.event || "logout").trim();
+  const router = store.findRouterByReportToken(token);
+  if (!router) return res.status(403).json({ ok: false, error: "invalid token" });
+  let loc = router.location_id ? store.findLocationById(router.location_id) : null;
+  if (gateway && loc && loc.gateway_name !== gateway) {
+    const alt = store.findLocationByGateway(gateway);
+    if (alt) loc = alt;
+  }
+  if (!loc || !mac) return res.status(400).json({ ok: false, error: "missing mac or location" });
+  if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(mac)) {
+    return res.status(400).json({ ok: false, error: "invalid mac" });
+  }
+  const ended = store.endVisitsByMac(loc.id, mac);
+  res.json({ ok: true, ended, event, location_id: loc.id });
+});
+
+app.post("/admin/session/sync", adminAuth, async (req, res) => {
+  try {
+    const ended = await sessionSync.syncAll();
+    res.json({ ok: true, ended });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // Tạo lại token (vô hiệu hoá link cũ) — dùng khi nghi ngờ link bị lộ
 app.post("/admin/locations/:id/regen-token", adminAuth, (req, res) => {
   store.regenerateEnrollToken(req.params.id);
@@ -682,5 +733,7 @@ try {
 } catch (e) {
   console.warn("[firmware] bootstrap failed:", e.message);
 }
+
+sessionSync.startSessionSync();
 
 app.listen(PORT, () => console.log(`H2T WiFi Marketing v${versioning.portalVersion()} : http://0.0.0.0:${PORT} (fw ${versioning.firmwareVersion()})`));
