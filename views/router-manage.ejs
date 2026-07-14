@@ -70,7 +70,9 @@ th{font-size:11px;color:#64748b;text-transform:uppercase}
     <p style="font-size:11px;font-weight:600;color:#475569;margin:12px 0 4px">Đẩy firmware <%= firmwareLatest %>:</p>
     <div class="log-box" style="display:block;color:#38bdf8;font-size:10px">wget -qO- "<%= pullFwUrl %>" | sh</div>
     <% } %>
-    <p style="font-size:11px;color:#94a3b8;margin-top:8px">Không có wget: <code>uclient-fetch -qO- "URL" | sh</code></p>
+    <p style="font-size:11px;color:#b45309;margin-top:8px">
+      Token Pull = cùng token trong link cài đặt phía trên (enroll token).
+    </p>
   </div>
   <% } %>
 

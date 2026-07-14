@@ -691,7 +691,10 @@ module.exports = {
   ensureReportToken(locationId) {
     const r = db.prepare("SELECT report_token FROM routers WHERE location_id=?").get(locationId);
     if (r?.report_token) return r.report_token;
-    const token = crypto.randomBytes(24).toString("hex");
+    const loc = db.prepare("SELECT enroll_token FROM locations WHERE id=?").get(locationId);
+    const token = (loc?.enroll_token && loc.enroll_token.length >= 32)
+      ? loc.enroll_token
+      : crypto.randomBytes(24).toString("hex");
     const ex = db.prepare("SELECT id FROM routers WHERE location_id=?").get(locationId);
     if (ex) {
       db.prepare("UPDATE routers SET report_token=? WHERE location_id=?").run(token, locationId);
@@ -708,6 +711,21 @@ module.exports = {
         JOIN locations l ON l.id=r.location_id WHERE r.report_token=?
       `).get(token)
     );
+  },
+  /** Pull API — chấp nhận report_token hoặc enroll_token (link cài đặt) */
+  findRouterByPullToken(token) {
+    if (!token || token.length < 32) return null;
+    const byReport = module.exports.findRouterByReportToken(token);
+    if (byReport) return byReport;
+    const loc = module.exports.findLocationByEnrollToken(token);
+    if (!loc) return null;
+    module.exports.ensureReportToken(loc.id);
+    return withDecryptedPassword(
+      db.prepare(`
+        SELECT r.*, l.gateway_name, l.display_name FROM routers r
+        JOIN locations l ON l.id=r.location_id WHERE l.id=?
+      `).get(loc.id)
+    ) || { location_id: loc.id, gateway_name: loc.gateway_name, display_name: loc.display_name };
   },
   logFirmwarePush(locationId, version, status, detail) {
     db.prepare("INSERT INTO firmware_push_log (location_id, version, status, detail) VALUES (?,?,?,?)")

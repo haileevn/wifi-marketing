@@ -473,12 +473,13 @@ app.get("/admin/router/:id", adminAuth, (req, res) => {
   const reportToken = store.ensureReportToken(loc.id);
   const host = req.get("host");
   const domain = host.includes(":") ? host.split(":")[0] : host;
-  const pullConfigUrl = `https://${host}/api/router/pull-config.sh?token=${reportToken}`;
+  const pullToken = loc.enroll_token || reportToken;
+  const pullConfigUrl = `https://${host}/api/router/pull-config.sh?token=${pullToken}`;
   const fw = versioning.readLatestManifest();
-  const pullFwUrl = fw ? `https://${host}/api/router/pull-firmware.sh?token=${reportToken}` : null;
+  const pullFwUrl = fw ? `https://${host}/api/router/pull-firmware.sh?token=${pullToken}` : null;
   res.render("router-manage",{
     location:loc, router: routerSafe, host, domain,
-    reportToken, pullConfigUrl, pullFwUrl, firmwareLatest: fw?.version || null,
+    reportToken: pullToken, pullConfigUrl, pullFwUrl, firmwareLatest: fw?.version || null,
     regen: req.query.regen==="1", saved: req.query.saved==="1",
     oneShot: (process.env.ENROLL_ONE_SHOT || "1") !== "0",
   });
@@ -758,28 +759,36 @@ app.post("/api/enroll/:token", publicLimiter, (req, res) => {
   res.json({ ok:true, one_shot: (process.env.ENROLL_ONE_SHOT || "1") !== "0", firmware_version: fw?.version || null });
 });
 
-/* ── Router pull (router → portal, không cần VPS SSH) ─────────── */
-app.get("/api/router/pull-config.sh", publicLimiter, (req, res) => {
+function servePullConfig(req, res) {
   const token = String(req.query.token || "").trim();
-  const router = store.findRouterByReportToken(token);
-  if (!router) return res.status(403).type("text/plain").send("# invalid token\n");
+  const router = store.findRouterByPullToken(token);
+  if (!router) return res.status(403).type("text/plain").send("# invalid token — dùng token từ Admin → Router (giống link cài đặt)\n");
   const loc = store.findLocationById(router.location_id);
   if (!loc) return res.status(404).type("text/plain").send("# location not found\n");
   const domain = (req.get("host") || process.env.PORTAL_DOMAIN || "wifi.06.com.vn").split(":")[0];
-  const script = buildPullConfigScript(loc, domain, token, Number(req.query.session_minutes) || 720);
+  const effectiveToken = store.ensureReportToken(loc.id);
+  const script = buildPullConfigScript(loc, domain, effectiveToken, Number(req.query.session_minutes) || 720);
   res.set("Cache-Control", "no-store").type("text/x-shellscript").send(script);
-});
+}
 
-app.get("/api/router/pull-firmware.sh", publicLimiter, (req, res) => {
+function servePullFirmware(req, res) {
   const token = String(req.query.token || "").trim();
-  const router = store.findRouterByReportToken(token);
+  const router = store.findRouterByPullToken(token);
   if (!router) return res.status(403).type("text/plain").send("# invalid token\n");
+  const loc = store.findLocationById(router.location_id);
+  if (!loc) return res.status(404).type("text/plain").send("# location not found\n");
   const fw = versioning.readLatestManifest();
   if (!fw) return res.status(404).type("text/plain").send("# no firmware release\n");
   const domain = (req.get("host") || process.env.PORTAL_DOMAIN || "wifi.06.com.vn").split(":")[0];
-  const script = buildPullFirmwareScript(domain, token, fw.version, fw.filename);
+  const effectiveToken = store.ensureReportToken(loc.id);
+  const script = buildPullFirmwareScript(domain, effectiveToken, fw.version, fw.filename);
   res.set("Cache-Control", "no-store").type("text/x-shellscript").send(script);
-});
+}
+
+app.get("/api/router/pull-config.sh", publicLimiter, servePullConfig);
+app.get("/api/router/pull-config", publicLimiter, servePullConfig);
+app.get("/api/router/pull-firmware.sh", publicLimiter, servePullFirmware);
+app.get("/api/router/pull-firmware", publicLimiter, servePullFirmware);
 
 /* ── Session webhook (binauth / router) + manual sync ─────────── */
 app.post("/api/session/end", publicLimiter, (req, res) => {
