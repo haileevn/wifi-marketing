@@ -42,6 +42,52 @@ function parseFasParam(b64) {
 function rhid(hid, key) { return crypto.createHash("sha256").update(hid+key).digest("hex"); }
 function validPhone(p)   { return /^(0|\+84)\d{9}$/.test((p||"").replace(/[\s.-]/g,"")); }
 function normPhone(p)    { const s=(p||"").replace(/[\s.-]/g,""); return s.startsWith("+84")?"0"+s.slice(3):s; }
+function portalPublicBase() {
+  return String(process.env.PORTAL_PUBLIC_URL || process.env.DOMAIN || "https://wifi.06.com.vn")
+    .trim().replace(/\/$/, "");
+}
+
+/** originurl từ CPD thường là IP gateway LAN / connectivity-check → 404 sau auth. */
+function isBadPostAuthUrl(raw) {
+  if (!raw) return true;
+  let s = String(raw).trim();
+  try { s = decodeURIComponent(s.replace(/\+/g, " ")); } catch { /* keep */ }
+  let u;
+  try { u = new URL(s); } catch { return true; }
+  if (!/^https?:$/i.test(u.protocol)) return true;
+  const host = (u.hostname || "").toLowerCase();
+  if (!host || host === "localhost") return true;
+  if (/^(192\.168\.|10\.|127\.|0\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return true;
+  if (/captive|detectportal|connectivitycheck|clients\d*\.google|msftconnecttest|gstatic\.com|apple\.com|hotspot-detect/i.test(host + u.pathname)) return true;
+  return false;
+}
+
+function normalizeHttpUrl(raw, base) {
+  let s = String(raw || "").trim();
+  if (!s) return "";
+  if (s.startsWith("/")) s = `${base}${s}`;
+  try { s = decodeURIComponent(s.replace(/\+/g, " ")); } catch { /* keep */ }
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  try { return new URL(s).toString(); } catch { return ""; }
+}
+
+/** Ưu tiên: success_redirect (editor) → zalo_link → menu → /welcome/:id */
+function resolvePostAuthRedirect(loc, originurl) {
+  const base = portalPublicBase();
+  const candidates = [
+    loc.success_redirect,
+    loc.zalo_link,
+    loc.menu_enabled ? `${base}/menu/${loc.id}` : "",
+    `${base}/welcome/${loc.id}`,
+    originurl,
+  ];
+  for (const c of candidates) {
+    const url = normalizeHttpUrl(c, base);
+    if (url && !isBadPostAuthUrl(url)) return url;
+  }
+  return "https://www.google.com/";
+}
+
 /** OpenNDS gw_address thường đã là "192.168.x.x:2050" — không cộng port lần 2. */
 function openNdsAuthUrl(gatewayaddress, gatewayport, tok, redir) {
   let host = String(gatewayaddress || "").trim().replace(/\/$/, "");
@@ -50,7 +96,7 @@ function openNdsAuthUrl(gatewayaddress, gatewayport, tok, redir) {
   if (!hasPort && gatewayport) host = `${host}:${gatewayport}`;
   const q = new URLSearchParams({
     tok: String(tok || ""),
-    redir: redir || "http://google.com",
+    redir: redir || "https://www.google.com/",
   });
   return `http://${host}/opennds_auth/?${q.toString()}`;
 }
@@ -84,8 +130,16 @@ app.post("/auth", (req, res) => {
   const cid = store.upsertCustomer(ph, (name||"").trim().slice(0,60), loc.id);
   const cnt = store.logVisit(cid, loc.id, clientmac, clientip);
   zalo.onVisit({ customerId:cid, phone:ph, name:(name||"").trim(), locationName:loc.display_name, visitCount:cnt }).catch(()=>{});
-  const authUrl = openNdsAuthUrl(gatewayaddress, gatewayport, rhid(hid, loc.faskey), originurl);
-  res.render("success",{ location:loc, authUrl, clientip: clientip||"", gatewayaddress });
+  const redir = resolvePostAuthRedirect(loc, originurl);
+  const authUrl = openNdsAuthUrl(gatewayaddress, gatewayport, rhid(hid, loc.faskey), redir);
+  res.render("success",{ location:loc, authUrl, redir, clientip: clientip||"", gatewayaddress });
+});
+
+/* Trang chào sau khi auth (fallback khi chưa cấu hình success_redirect / zalo) */
+app.get("/welcome/:id", (req, res) => {
+  const loc = store.findLocationById(req.params.id);
+  if (!loc) return res.status(404).render("error",{message:"Không tìm thấy quán."});
+  res.render("welcome",{ location: loc });
 });
 
 /* ── Preview standalone (không cần FAS) ─────────────────────── */
@@ -132,6 +186,7 @@ app.post("/admin/editor/:id", adminAuth, (req, res) => {
     display_name: (b.display_name||"").trim().slice(0,100),
     promo_text:   (b.promo_text||"").trim().slice(0,300),
     zalo_link:    (b.zalo_link||"").trim(),
+    success_redirect: (b.success_redirect||"").trim().slice(0,500),
     accent_color: b.accent_color||"#B4452C",
     logo_data:    (b.logo_data||"").slice(0, 500000), // max ~375KB ảnh
     bg_color:     b.bg_color||"#FFF6EC",

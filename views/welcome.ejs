@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xin chào - <%= location.display_name %></title>
+<style>
+  :root {
+    --accent: <%= location.accent_color || '#B4452C' %>;
+    --bg: <%= location.bg_color || '#FFF6EC' %>;
+    --text: <%= location.text_color || '#241610' %>;
+    --card: <%= location.card_color || '#FFFFFF' %>;
+  }
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 28px 20px;
+  }
+  .card {
+    width: 100%; max-width: 380px; background: var(--card);
+    border-radius: 20px; padding: 28px 22px;
+    box-shadow: 0 12px 40px rgba(36,22,16,.08);
+  }
+  .logo { max-height: 64px; max-width: 180px; margin: 0 auto 16px; display: block; object-fit: contain; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  p { font-size: 14px; opacity: .75; line-height: 1.55; margin-bottom: 20px; }
+  .btn {
+    display: block; width: 100%; padding: 14px 16px; margin-top: 10px;
+    border-radius: 12px; font-weight: 800; font-size: 15px; text-decoration: none;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <% if (location.logo_data) { %>
+      <img class="logo" src="<%= location.logo_data %>" alt="">
+    <% } %>
+    <h1>Đã vào mạng!</h1>
+    <p>Chào bạn tại <b><%= location.display_name %></b>. Internet đã mở — chọn tiếp bên dưới nhé.</p>
+    <% if (location.zalo_link) { %>
+      <a class="btn btn-primary" href="<%= location.zalo_link %>">Nhận ưu đãi Zalo</a>
+    <% } %>
+    <% if (location.menu_enabled) { %>
+      <a class="btn btn-ghost" href="/menu/<%= location.id %>">Xem Menu</a>
+    <% } %>
+    <% if (!location.zalo_link && !location.menu_enabled) { %>
+      <a class="btn btn-primary" href="https://www.google.com/">Mở trình duyệt</a>
+    <% } %>
+  </div>
+</body>
+</html>

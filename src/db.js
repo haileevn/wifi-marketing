@@ -126,6 +126,8 @@ const newCols = [
   ["address",      "TEXT DEFAULT ''"],
   ["menu_enabled", "INTEGER DEFAULT 0"],
   ["enroll_token", "TEXT DEFAULT ''"],
+  // URL absolute sau khi OpenNDS auth xong (tránh originurl CPD = IP gateway → 404)
+  ["success_redirect", "TEXT DEFAULT ''"],
 ];
 for (const [col, def] of newCols) {
   if (!existingCols.includes(col)) {
@@ -206,7 +208,8 @@ module.exports = {
       accent_color=@accent_color, logo_data=@logo_data, bg_color=@bg_color,
       card_color=@card_color, text_color=@text_color, headline=@headline,
       btn_text=@btn_text, show_name=@show_name, require_name=@require_name,
-      custom_css=@custom_css, template_id=@template_id
+      custom_css=@custom_css, template_id=@template_id,
+      success_redirect=@success_redirect
     WHERE id=@id`).run({ id, ...d });
   },
 
