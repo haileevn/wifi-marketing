@@ -32,12 +32,17 @@ function generateKeypair(comment = "h2t-wifi") {
 
 /**
  * Build script cài đặt (POSIX sh, tương thích BusyBox ash trên OpenWrt).
+ * Tailscale trên OpenWrt 23.05+ không còn trong feed chính — tải IPK community (GuNanOvO)
+ * theo OPENWRT_ARCH (vd mipsel_24kc).
  */
 function buildInstallScript({ location, domain, token, pubkey, tailscaleAuthKey, firmwareVersion, reportToken }) {
   const proto = "https";
   const callbackUrl = `${proto}://${domain}/api/enroll/${token}`;
   const fwVer = firmwareVersion || "0.0.0";
   const reportTok = reportToken || "";
+  const tsKey = String(tailscaleAuthKey || "").replace(/'/g, "'\\''");
+  // Pin bản IPK đã kiểm tra có mipsel_24kc (OpenWrt 23.05 / mt7621)
+  const tsVer = process.env.OPENWRT_TAILSCALE_VERSION || "1.98.8";
 
   return `#!/bin/sh
 # ============================================================
@@ -75,22 +80,62 @@ grep -qF "${pubkey}" /etc/dropbear/authorized_keys 2>/dev/null || \\
   echo "${pubkey}" >> /etc/dropbear/authorized_keys
 chmod 600 /etc/dropbear/authorized_keys
 
-# ---- 4) Cài Tailscale (mesh VPN để portal SSH vào được dù router sau NAT) ----
-echo "[4/6] Cài Tailscale..."
+# ---- 4) Cài Tailscale (OpenWrt — KHÔNG dùng install.sh của Tailscale.com) ----
+echo "[4/6] Cài Tailscale cho OpenWrt..."
+install_tailscale_openwrt() {
+  opkg update >/dev/null 2>&1 || true
+  opkg install kmod-tun ca-bundle 2>/dev/null || true
+  # 1) thử feed chính (một số build còn package)
+  if opkg list-installed 2>/dev/null | grep -q '^tailscale '; then
+    return 0
+  fi
+  if opkg install tailscale 2>/dev/null; then
+    return 0
+  fi
+  # 2) IPK community theo OPENWRT_ARCH (vd mipsel_24kc)
+  ARCH=\$(. /etc/os-release 2>/dev/null; echo "\${OPENWRT_ARCH:-}")
+  [ -n "\$ARCH" ] || ARCH=\$(opkg print-architecture 2>/dev/null | awk '\$1=="arch"{print \$2; exit}')
+  [ -n "\$ARCH" ] || ARCH=mipsel_24kc
+  VER="${tsVer}"
+  IPK="tailscale_\${VER}_\${ARCH}.ipk"
+  URL1="https://github.com/GuNanOvO/openwrt-tailscale/releases/download/v\${VER}/\${IPK}"
+  # mirror (GitHub có thể chậm từ VN)
+  URL2="https://ghfast.top/https://github.com/GuNanOvO/openwrt-tailscale/releases/download/v\${VER}/\${IPK}"
+  echo "  Arch=\$ARCH → tải \$IPK"
+  cd /tmp
+  rm -f "\$IPK"
+  if command -v uclient-fetch >/dev/null 2>&1; then
+    uclient-fetch -q -O "\$IPK" "\$URL1" || uclient-fetch -q -O "\$IPK" "\$URL2" || true
+  else
+    wget -qO "\$IPK" "\$URL1" || wget -qO "\$IPK" "\$URL2" || true
+  fi
+  if [ ! -s "\$IPK" ]; then
+    echo "!! Không tải được Tailscale IPK cho arch \$ARCH"
+    echo "!! Tải tay: \$URL1"
+    echo "!! Rồi: opkg install kmod-tun && opkg install /tmp/\$IPK"
+    return 1
+  fi
+  opkg install "/tmp/\$IPK" || opkg install --force-overwrite "/tmp/\$IPK"
+}
+
 if ! command -v tailscale >/dev/null 2>&1; then
-  opkg list-installed 2>/dev/null | grep -q '^tailscale ' || opkg install tailscale || {
-    echo "!! opkg không có gói tailscale cho router này."
-    echo "!! Vui lòng cài thủ công: https://tailscale.com/kb/1490/openwrt"
-    echo "!! Sau khi cài xong, lấy lại gói cài từ portal /admin/router (không share authkey)."
+  install_tailscale_openwrt || {
+    echo "!! Cài Tailscale thất bại — dừng enroll (cần mesh VPN)."
     exit 1
   }
 fi
-service tailscale enable 2>/dev/null || true
-service tailscale start 2>/dev/null || true
+
+/etc/init.d/tailscale enable 2>/dev/null || service tailscale enable 2>/dev/null || true
+/etc/init.d/tailscale start 2>/dev/null || service tailscale start 2>/dev/null || true
 sleep 2
-# Auth key chỉ dùng 1 lần trong tiến trình này — không echo ra log
-TS_AUTHKEY='${String(tailscaleAuthKey || "").replace(/'/g, "'\\''")}'
-tailscale up --authkey="$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false
+# Auth key chỉ dùng trong biến — không echo
+TS_AUTHKEY='${tsKey}'
+if [ -z "\$TS_AUTHKEY" ]; then
+  echo "!! Server thiếu TAILSCALE_AUTHKEY"
+  exit 1
+fi
+tailscale up --authkey="\$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false --advertise-tags=tag:router 2>/dev/null \\
+  || tailscale up --authkey="\$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false
 unset TS_AUTHKEY
 
 # ---- 5) Cài firmware agent H2T (OTA) ----
@@ -110,16 +155,16 @@ fi
 # ---- 6) Lấy IP Tailscale và báo về portal ----
 echo "[6/6] Báo cáo về portal..."
 sleep 2
-TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
-MODEL=$(cat /tmp/sysinfo/model 2>/dev/null || echo "unknown")
+TS_IP=\$(tailscale ip -4 2>/dev/null | head -1)
+MODEL=\$(cat /tmp/sysinfo/model 2>/dev/null || echo "unknown")
 
-if [ -z "$TS_IP" ]; then
+if [ -z "\$TS_IP" ]; then
   echo "!! Chưa lấy được IP Tailscale, thử lại sau vài giây: tailscale ip -4"
 else
-  echo "IP Tailscale: $TS_IP"
-  uclient-fetch -q -O - --post-data="ts_ip=$TS_IP&model=$MODEL" "${callbackUrl}" 2>/dev/null \\
-    || wget -qO- --post-data="ts_ip=$TS_IP&model=$MODEL" "${callbackUrl}" 2>/dev/null \\
-    || echo "!! Không tự báo cáo được, vào portal nhập IP thủ công: $TS_IP"
+  echo "IP Tailscale: \$TS_IP"
+  uclient-fetch -q -O - --post-data="ts_ip=\$TS_IP&model=\$MODEL" "${callbackUrl}" 2>/dev/null \\
+    || wget -qO- --post-data="ts_ip=\$TS_IP&model=\$MODEL" "${callbackUrl}" 2>/dev/null \\
+    || echo "!! Không tự báo cáo được, vào portal nhập IP thủ công: \$TS_IP"
 fi
 
 service opennds stop 2>/dev/null || true
