@@ -35,8 +35,26 @@ uci set opennds.@opennds[0].faskey="$FASKEY"
 uci set opennds.@opennds[0].fasssl='1'
 uci set opennds.@opennds[0].sessiontimeout='720'
 
-# Tắt binauth nếu script hỏng (thường chặn auth im lặng)
-uci -q delete opennds.@opennds[0].binauth || true
+# Binauth webhook → portal (logout/timeout ghi ended_at)
+mkdir -p /etc/opennds
+TOKEN=$(cat /etc/h2t-wifi/report_token 2>/dev/null || echo "")
+[ -z "$TOKEN" ] && TOKEN="manual"
+cat > /etc/opennds/h2t-binauth.sh << BINSCRIPT
+#!/bin/sh
+METHOD="\${1:-}"; MAC="\${2:-}"; [ -z "\$MAC" ] && MAC="\${clientmac:-\${nds_client_mac:-}}"
+GATEWAY="$GW"; TOKEN="$TOKEN"; DOMAIN="$DOMAIN"
+case "\$METHOD" in
+  auth_client|client_auth|authenticate) exit 0 ;;
+  client_deauth|deauth|logout|timeout|idle_timeout|session_end|ndsctl_deauth)
+    [ -n "\$MAC" ] && [ -n "\$TOKEN" ] && \\
+      (wget -q -O - --post-data="token=\$TOKEN&mac=\$MAC&event=\$METHOD&gateway_name=\$GATEWAY" "https://\$DOMAIN/api/session/end" 2>/dev/null \\
+        || uclient-fetch -q -O - --post-data="token=\$TOKEN&mac=\$MAC&event=\$METHOD&gateway_name=\$GATEWAY" "https://\$DOMAIN/api/session/end" 2>/dev/null) || true
+    exit 0 ;;
+esac
+exit 0
+BINSCRIPT
+chmod +x /etc/opennds/h2t-binauth.sh
+uci set opennds.@opennds[0].binauth='/etc/opennds/h2t-binauth.sh'
 
 # DNS + HTTP/HTTPS trước auth (portal)
 uci -q delete opennds.@opennds[0].preauthenticated_users
