@@ -79,15 +79,17 @@ if ! command -v tailscale >/dev/null 2>&1; then
   opkg list-installed 2>/dev/null | grep -q '^tailscale ' || opkg install tailscale || {
     echo "!! opkg không có gói tailscale cho router này."
     echo "!! Vui lòng cài thủ công: https://tailscale.com/kb/1490/openwrt"
-    echo "!! Sau khi cài xong, chạy lại lệnh:"
-    echo "   tailscale up --authkey=${tailscaleAuthKey} --hostname=${location.gateway_name} --accept-dns=false"
+    echo "!! Sau khi cài xong, lấy lại gói cài từ portal /admin/router (không share authkey)."
     exit 1
   }
 fi
 service tailscale enable 2>/dev/null || true
 service tailscale start 2>/dev/null || true
 sleep 2
-tailscale up --authkey="${tailscaleAuthKey}" --hostname="${location.gateway_name}" --accept-dns=false
+# Auth key chỉ dùng 1 lần trong tiến trình này — không echo ra log
+TS_AUTHKEY='${String(tailscaleAuthKey || "").replace(/'/g, "'\\''")}'
+tailscale up --authkey="$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false
+unset TS_AUTHKEY
 
 # ---- 5) Lấy IP Tailscale và báo về portal ----
 echo "[5/5] Báo cáo về portal..."

@@ -5,10 +5,11 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "add-location": "node scripts/add-location.js"
+    "add-location": "node scripts/add-location.js",
+    "smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.3.0",
+    "better-sqlite3": "^12.11.1",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",
     "express": "^4.19.2",

@@ -57,7 +57,8 @@ th{font-size:11px;color:#64748b;text-transform:uppercase}
     VPN/IP truy cập được từ trước.
   </div>
 
-  <% if (regen) { %><div class="saved-toast">✓ Đã tạo link cài đặt mới. Link cũ đã bị vô hiệu hoá.</div><% } %>
+  <% if (regen) { %><div class="saved-toast">✓ Đã tạo link cài đặt mới. Link cũ đã bị thu hồi.</div><% } %>
+  <% if (typeof saved !== 'undefined' && saved) { %><div class="saved-toast">✓ Đã lưu thông tin SSH.</div><% } %>
 
   <!-- Gói cài đặt tự động -->
   <div class="card">
@@ -75,15 +76,21 @@ th{font-size:11px;color:#64748b;text-transform:uppercase}
     <% } %>
 
     <p style="font-size:12px;color:#64748b;margin-bottom:8px">
-      SSH vào router (qua Bitvise/PuTTY như bình thường), dán và chạy lệnh sau:
+      SSH vào router (qua Bitvise/PuTTY như bình thường), dán và chạy lệnh sau.
+      <b>Không chia sẻ</b> lệnh này — chứa token cài đặt + kéo Tailscale authkey từ server.
     </p>
     <div class="log-box" style="display:block;color:#38bdf8">curl -sL https://<%= host %>/install/<%= location.enroll_token %>.sh | sh</div>
     <p style="font-size:11px;color:#94a3b8;margin-top:6px">
       Nếu router không có <code>curl</code>, dùng: <code>wget -qO- https://<%= host %>/install/<%= location.enroll_token %>.sh | sh</code>
     </p>
+    <% if (typeof oneShot === 'undefined' || oneShot) { %>
+    <p style="font-size:11px;color:#b45309;margin-top:8px">
+      Sau khi enroll thành công, link này <b>tự hết hạn</b> (one-shot). Tạo lại link nếu cần cài lại router.
+    </p>
+    <% } %>
 
     <form method="POST" action="/admin/locations/<%= location.id %>/regen-token" onsubmit="return confirm('Link cũ sẽ ngừng hoạt động. Tiếp tục?')" style="margin-top:12px">
-      <button class="btn btn-outline" style="padding:6px 14px;font-size:12px" type="submit">🔄 Tạo lại link (vô hiệu hoá link cũ)</button>
+      <button class="btn btn-outline" style="padding:6px 14px;font-size:12px" type="submit">🔄 Tạo lại / thu hồi link cũ</button>
     </form>
   </div>
 
@@ -93,18 +100,18 @@ th{font-size:11px;color:#64748b;text-transform:uppercase}
     <form id="routerForm" method="POST" action="/admin/router/<%= location.id %>">
       <div class="row2">
         <div class="field"><label>Host (IP Tailscale hoặc IP công khai)</label>
-          <input name="ssh_host" value="<%= router?.ssh_host||'' %>" placeholder="100.x.x.x" required></div>
+          <input name="ssh_host" value="<%= router?.ssh_host||'' %>" placeholder="100.x.x.x" required autocomplete="off"></div>
         <div class="field"><label>Port SSH</label>
           <input name="ssh_port" type="number" value="<%= router?.ssh_port||22 %>"></div>
       </div>
       <div class="row2">
         <div class="field"><label>Username</label>
-          <input name="ssh_user" value="<%= router?.ssh_user||'root' %>"></div>
-        <div class="field"><label>Password</label>
-          <input name="ssh_password" type="password" value="<%= router?.ssh_password||'' %>" placeholder="••••••"></div>
+          <input name="ssh_user" value="<%= router?.ssh_user||'root' %>" autocomplete="username"></div>
+        <div class="field"><label>Password<%= router?.has_password ? ' (đã lưu — để trống nếu giữ nguyên)' : '' %></label>
+          <input name="ssh_password" type="password" value="" placeholder="<%= router?.has_password ? '••••••••' : 'chỉ dùng khi chưa có SSH key' %>" autocomplete="new-password"></div>
       </div>
       <div class="field"><label>Model router (ghi chú)</label>
-        <input name="model" value="<%= router?.model||'' %>" placeholder="Linksys E5600"></div>
+        <input name="model" value="<%= router?.model||'' %>" placeholder="GL.iNet MT3000"></div>
       <button class="btn" type="submit">💾 Lưu thông tin</button>
       <button class="btn btn-outline" type="button" onclick="testConn()">🔌 Test kết nối</button>
     </form>

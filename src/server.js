@@ -6,6 +6,8 @@ const store   = require("./db");
 const zalo    = require("./zalo");
 const routerCtl = require("./router");
 const enroll  = require("./enroll");
+const secrets = require("./secrets");
+const { createRateLimiter } = require("./rate-limit");
 
 const app = express();
 app.set("view engine", "ejs");
@@ -15,6 +17,14 @@ app.use(express.urlencoded({ extended: false, limit: "8mb" })); // logo base64 l
 app.use(express.json({ limit: "8mb" }));
 
 const PORT = process.env.PORT || 20140;
+const publicLimiter = createRateLimiter({ windowMs: 60_000, max: 30 });
+
+if (!secrets.isConfigured()) {
+  console.warn("[security] SECRETS_KEY chưa cấu hình (≥16 ký tự) — SSH password lưu plaintext trong DB.");
+}
+if (!process.env.ADMIN_PASS || process.env.ADMIN_PASS === "doi-mat-khau-nay-ngay") {
+  console.warn("[security] Đổi ADMIN_PASS trong .env trước khi đưa lên production.");
+}
 
 /* ── helpers ─────────────────────────────────────────────────── */
 function parseFasParam(b64) {
@@ -182,7 +192,13 @@ app.get("/admin/router/:id", adminAuth, (req, res) => {
   const loc = store.findLocationById(req.params.id);
   if (!loc) return res.redirect("/admin");
   const router = store.findRouterByLocation(loc.id);
-  res.render("router-manage",{ location:loc, router, host: req.get("host"), regen: req.query.regen==="1" });
+  // Không gửi plaintext password ra HTML — chỉ báo đã có mật khẩu hay chưa
+  const routerSafe = router ? { ...router, ssh_password: undefined, has_password: !!(router.ssh_password), ssh_privkey: undefined } : null;
+  res.render("router-manage",{
+    location:loc, router: routerSafe, host: req.get("host"),
+    regen: req.query.regen==="1", saved: req.query.saved==="1",
+    oneShot: (process.env.ENROLL_ONE_SHOT || "1") !== "0",
+  });
 });
 
 app.post("/admin/router/:id", adminAuth, (req, res) => {
@@ -267,9 +283,10 @@ app.get("/health", (_,res) => res.json({ok:true}));
 
 /* ── Gói cài đặt tự động cho router ─────────────────────────── */
 
-// Tải script cài đặt (public bằng token bí mật trong URL, không cần đăng nhập vì router gọi trực tiếp)
-app.get("/install/:token.sh", (req, res) => {
-  const loc = store.findLocationByEnrollToken(req.params.token);
+// Tải script cài đặt (public bằng token bí mật trong URL — rate-limit + token dài)
+app.get("/install/:token.sh", publicLimiter, (req, res) => {
+  const token = String(req.params.token || "").replace(/\.sh$/i, "");
+  const loc = store.findLocationByEnrollToken(token);
   if (!loc) return res.status(404).type("text/plain").send("echo 'Link không hợp lệ hoặc đã bị thu hồi.'");
 
   if (!process.env.TAILSCALE_AUTHKEY) {
@@ -289,17 +306,22 @@ app.get("/install/:token.sh", (req, res) => {
     location: loc, domain, token: loc.enroll_token,
     pubkey: router.ssh_pubkey, tailscaleAuthKey: process.env.TAILSCALE_AUTHKEY,
   });
+  res.set("Cache-Control", "no-store");
   res.type("text/x-shellscript").send(script);
 });
 
-// Router tự gọi về sau khi cài xong (không cần Basic Auth vì router không đăng nhập được kiểu đó)
-app.post("/api/enroll/:token", (req, res) => {
+// Router tự gọi về sau khi cài xong (không cần Basic Auth)
+app.post("/api/enroll/:token", publicLimiter, (req, res) => {
   const loc = store.findLocationByEnrollToken(req.params.token);
   if (!loc) return res.status(404).json({ ok:false, error:"invalid token" });
-  const { ts_ip, model } = req.body;
-  if (!ts_ip) return res.status(400).json({ ok:false, error:"missing ts_ip" });
+  const ts_ip = (req.body.ts_ip || "").trim();
+  const model = (req.body.model || "").trim().slice(0, 80);
+  // Chỉ chấp nhận IP Tailscale (CGNAT range 100.64.0.0/10) hoặc IPv4 hợp lệ
+  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ts_ip)) {
+    return res.status(400).json({ ok:false, error:"missing or invalid ts_ip" });
+  }
   store.markRouterEnrolled(loc.id, { tsIp: ts_ip, model });
-  res.json({ ok:true });
+  res.json({ ok:true, one_shot: (process.env.ENROLL_ONE_SHOT || "1") !== "0" });
 });
 
 // Tạo lại token (vô hiệu hoá link cũ) — dùng khi nghi ngờ link bị lộ

@@ -1,12 +1,18 @@
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const Database = require("better-sqlite3");
+const secrets = require("./secrets");
 
 const dbPath = process.env.DB_PATH || path.join(__dirname, "..", "data", "wifi.db");
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
+
+function newEnrollToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS locations (
@@ -121,10 +127,19 @@ for (const [col, def] of routerNewCols) {
 }
 
 // Sinh enroll_token cho các quán chưa có (dữ liệu cũ)
-const crypto = require("crypto");
 const noToken = db.prepare("SELECT id FROM locations WHERE enroll_token = '' OR enroll_token IS NULL").all();
 for (const row of noToken) {
-  db.prepare("UPDATE locations SET enroll_token = ? WHERE id = ?").run(crypto.randomBytes(16).toString("hex"), row.id);
+  db.prepare("UPDATE locations SET enroll_token = ? WHERE id = ?").run(newEnrollToken(), row.id);
+}
+
+function withDecryptedPassword(router) {
+  if (!router) return null;
+  try {
+    return { ...router, ssh_password: secrets.decrypt(router.ssh_password || "") };
+  } catch (e) {
+    console.warn("[db] không giải mã được ssh_password:", e.message);
+    return { ...router, ssh_password: "" };
+  }
 }
 
 module.exports = {
@@ -143,7 +158,7 @@ module.exports = {
   },
 
   addLocation({ gateway_name, display_name, faskey, promo_text, zalo_link, accent_color }) {
-    const token = require("crypto").randomBytes(16).toString("hex");
+    const token = newEnrollToken();
     return db.prepare(`
       INSERT INTO locations (gateway_name, display_name, faskey, promo_text, zalo_link, accent_color, enroll_token)
       VALUES (@gateway_name, @display_name, @faskey,
@@ -224,20 +239,27 @@ module.exports = {
 
   /* ── Routers (điều khiển từ xa qua SSH) ─────────────────────── */
   findRouterByLocation(locationId) {
-    return db.prepare("SELECT * FROM routers WHERE location_id=?").get(locationId);
+    return withDecryptedPassword(db.prepare("SELECT * FROM routers WHERE location_id=?").get(locationId));
   },
   findRouterById(id) {
-    return db.prepare("SELECT * FROM routers WHERE id=?").get(id);
+    return withDecryptedPassword(db.prepare("SELECT * FROM routers WHERE id=?").get(id));
   },
   upsertRouter(locationId, { ssh_host, ssh_port, ssh_user, ssh_password, model }) {
-    const ex = db.prepare("SELECT id FROM routers WHERE location_id=?").get(locationId);
+    const ex = db.prepare("SELECT id, ssh_password FROM routers WHERE location_id=?").get(locationId);
+    // Để trống password trên form = giữ password cũ (không ghi đè bằng chuỗi rỗng)
+    const encPass = (ssh_password && ssh_password.length)
+      ? secrets.encrypt(ssh_password)
+      : (ex ? ex.ssh_password : "");
     if (ex) {
       db.prepare(`UPDATE routers SET ssh_host=?, ssh_port=?, ssh_user=?, ssh_password=?, model=? WHERE location_id=?`)
-        .run(ssh_host, ssh_port||22, ssh_user||'root', ssh_password||'', model||'', locationId);
+        .run(ssh_host, ssh_port||22, ssh_user||'root', encPass, model||'', locationId);
       return ex.id;
     }
     return db.prepare(`INSERT INTO routers (location_id, ssh_host, ssh_port, ssh_user, ssh_password, model)
-      VALUES (?,?,?,?,?,?)`).run(locationId, ssh_host, ssh_port||22, ssh_user||'root', ssh_password||'', model||'').lastInsertRowid;
+      VALUES (?,?,?,?,?,?)`).run(locationId, ssh_host, ssh_port||22, ssh_user||'root', encPass, model||'').lastInsertRowid;
+  },
+  clearRouterPassword(locationId) {
+    db.prepare("UPDATE routers SET ssh_password='' WHERE location_id=?").run(locationId);
   },
   updateRouterStatus(id, statusJson) {
     db.prepare("UPDATE routers SET last_status=?, last_seen=datetime('now','localtime') WHERE id=?").run(statusJson, id);
@@ -245,35 +267,40 @@ module.exports = {
   listRoutersWithLocation() {
     return db.prepare(`
       SELECT r.*, l.display_name, l.gateway_name FROM routers r
-      JOIN locations l ON l.id=r.location_id ORDER BY l.id`).all();
+      JOIN locations l ON l.id=r.location_id ORDER BY l.id`).all().map(withDecryptedPassword);
   },
 
   /* ── Enrollment tự động (gói cài đặt) ────────────────────────── */
   findLocationByEnrollToken(token) {
+    if (!token || token.length < 32) return null;
     return db.prepare("SELECT * FROM locations WHERE enroll_token = ?").get(token);
   },
   regenerateEnrollToken(locationId) {
-    const token = require("crypto").randomBytes(16).toString("hex");
+    const token = newEnrollToken();
     db.prepare("UPDATE locations SET enroll_token = ? WHERE id = ?").run(token, locationId);
     return token;
   },
   // Đảm bảo có 1 router record + SSH keypair cho location này (tạo mới nếu chưa có)
   ensureRouterRecord(locationId, pubkey, privkey) {
     const ex = db.prepare("SELECT * FROM routers WHERE location_id=?").get(locationId);
-    if (ex && ex.ssh_pubkey) return ex;
+    if (ex && ex.ssh_pubkey) return withDecryptedPassword(ex);
     if (ex) {
       db.prepare("UPDATE routers SET ssh_pubkey=?, ssh_privkey=? WHERE id=?").run(pubkey, privkey, ex.id);
-      return db.prepare("SELECT * FROM routers WHERE id=?").get(ex.id);
+      return withDecryptedPassword(db.prepare("SELECT * FROM routers WHERE id=?").get(ex.id));
     }
     const id = db.prepare(`INSERT INTO routers (location_id, ssh_host, ssh_pubkey, ssh_privkey)
       VALUES (?, '', ?, ?)`).run(locationId, pubkey, privkey).lastInsertRowid;
-    return db.prepare("SELECT * FROM routers WHERE id=?").get(id);
+    return withDecryptedPassword(db.prepare("SELECT * FROM routers WHERE id=?").get(id));
   },
   // Router tự báo IP Tailscale về sau khi cài xong
+  // - Xoá SSH password (đã dùng key)
+  // - Hết hạn link cài (ENROLL_ONE_SHOT=1 mặc định) để token lộ không tái sử dụng được
   markRouterEnrolled(locationId, { tsIp, model }) {
-    db.prepare(`UPDATE routers SET ssh_host=?, ssh_user='root', model=?,
+    db.prepare(`UPDATE routers SET ssh_host=?, ssh_user='root', ssh_password='', model=?,
       enrolled_at=datetime('now','localtime'), last_seen=datetime('now','localtime') WHERE location_id=?`)
       .run(tsIp, model||'', locationId);
+    const oneShot = (process.env.ENROLL_ONE_SHOT || "1") !== "0";
+    if (oneShot) this.regenerateEnrollToken(locationId);
   },
 
   /* ── Menu món ăn ─────────────────────────────────────────── */
