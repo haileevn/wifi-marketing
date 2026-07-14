@@ -125,17 +125,38 @@ if ! command -v tailscale >/dev/null 2>&1; then
   }
 fi
 
-/etc/init.d/tailscale enable 2>/dev/null || service tailscale enable 2>/dev/null || true
-/etc/init.d/tailscale start 2>/dev/null || service tailscale start 2>/dev/null || true
-sleep 2
+# Khởi động daemon (OpenWrt package: /etc/init.d/tailscale → tailscaled)
+/etc/init.d/tailscale enable 2>/dev/null || true
+/etc/init.d/tailscale stop 2>/dev/null || true
+/etc/init.d/tailscale start 2>/dev/null || service tailscale start 2>/dev/null || {
+  # fallback trực tiếp
+  mkdir -p /var/lib/tailscale /var/run
+  (tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock >/tmp/tailscaled.log 2>&1 &) || true
+}
+# Đợi sock sẵn sàng (tối đa ~20s)
+i=0
+while [ \$i -lt 20 ]; do
+  if tailscale status >/dev/null 2>&1 || [ -S /var/run/tailscale/tailscaled.sock ] || [ -S /tmp/tailscaled.sock ]; then
+    break
+  fi
+  i=\$((i+1)); sleep 1
+done
+sleep 1
 # Auth key chỉ dùng trong biến — không echo
 TS_AUTHKEY='${tsKey}'
 if [ -z "\$TS_AUTHKEY" ]; then
   echo "!! Server thiếu TAILSCALE_AUTHKEY"
   exit 1
 fi
-tailscale up --authkey="\$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false --advertise-tags=tag:router 2>/dev/null \\
-  || tailscale up --authkey="\$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false
+if ! tailscale up --authkey="\$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false --advertise-tags=tag:router 2>/tmp/ts-up.err; then
+  # Một số build không hỗ trợ --advertise-tags
+  if ! tailscale up --authkey="\$TS_AUTHKEY" --hostname="${location.gateway_name}" --accept-dns=false 2>>/tmp/ts-up.err; then
+    echo "!! tailscale up thất bại:"
+    cat /tmp/ts-up.err 2>/dev/null || true
+    echo "!! Thử tay: /etc/init.d/tailscale start && tailscale up --authkey=... --hostname=${location.gateway_name}"
+    exit 1
+  fi
+fi
 unset TS_AUTHKEY
 
 # ---- 5) Cài firmware agent H2T (OTA) ----
