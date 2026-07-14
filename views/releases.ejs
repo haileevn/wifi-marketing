@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Releases — H2T WiFi</title>
+<style>
+:root{--ink:#1a202c;--paper:#f7f8fa;--accent:#3B82F6;--line:#e2e8f0;--green:#10B981}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);padding:24px 20px 60px}
+.wrap{max-width:960px;margin:0 auto}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.back{width:34px;height:34px;border-radius:9px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink)}
+h1{font-size:20px;font-weight:800}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h2{font-size:15px;font-weight:700;margin-bottom:10px}
+.ver{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.pill{background:#f1f5f9;border-radius:10px;padding:10px 14px;min-width:140px}
+.pill b{display:block;font-size:18px}
+.pill span{font-size:11px;color:#64748b}
+textarea,input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit}
+.btn{padding:9px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
+.btn-green{background:var(--green)}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+.btn:disabled{opacity:.5}
+.saved{background:#d1fae5;color:#065f46;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
+th{font-size:11px;color:#64748b;text-transform:uppercase}
+code{font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px}
+.hint{font-size:12px;color:#64748b;line-height:1.55;margin-top:8px}
+.log{background:#0f172a;color:#a3e635;font-family:monospace;font-size:11px;padding:12px;border-radius:8px;max-height:180px;overflow:auto;white-space:pre-wrap;display:none;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <a class="back" href="/admin">←</a>
+    <h1>Releases — Portal & Firmware</h1>
+  </div>
+
+  <% if (published) { %><div class="saved">✓ Đã build & publish firmware <%= latest?.version %>.</div><% } %>
+
+  <div class="card">
+    <h2>Phiên bản hiện tại (source)</h2>
+    <div class="ver">
+      <div class="pill"><b>v<%= portalVersion %></b><span>Portal (package.json)</span></div>
+      <div class="pill"><b>v<%= firmwareVersion %></b><span>Firmware (firmware/VERSION)</span></div>
+      <div class="pill"><b><%= latest ? ('v'+latest.version) : '—' %></b><span>Latest đã publish</span></div>
+    </div>
+    <% if (latest) { %>
+    <p class="hint">
+      Download: <code>/firmware/download/<%= latest.filename %></code><br>
+      Manifest: <code>/firmware/latest.json</code> · <code>/firmware/latest.env</code><br>
+      SHA256: <code><%= latest.sha256 %></code>
+    </p>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <h2>Publish bản mới</h2>
+    <p class="hint" style="margin-bottom:10px">
+      Mỗi lần update: tăng <code>package.json</code> (portal) và/hoặc <code>firmware/VERSION</code>,
+      rồi bấm Publish — router tải gói <code>h2t-router-&lt;ver&gt;.tar.gz</code>.
+    </p>
+    <form method="POST" action="/admin/releases/publish">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Changelog</label>
+      <textarea name="changelog" rows="3" placeholder="Vd: Fix OpenNDS walled garden, cron check-update 6h"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-green" type="submit">📦 Build & publish firmware v<%= firmwareVersion %></button>
+        <a class="btn btn-outline" href="/firmware/latest.json" target="_blank">Xem latest.json</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Đẩy firmware xuống router</h2>
+    <p class="hint" style="margin-bottom:10px">SSH vào từng quán đã enroll / có IP — tải gói + chạy <code>update.sh</code>.</p>
+    <table>
+      <tr><th>Quán</th><th>Host</th><th>FW trên router</th><th></th></tr>
+      <% locations.forEach(l => { %>
+      <tr>
+        <td><b><%= l.display_name %></b><br><code><%= l.gateway_name %></code></td>
+        <td><%= l.router?.ssh_host || '—' %></td>
+        <td><%= l.router?.firmware_version || '—' %></td>
+        <td>
+          <% if (l.router?.ssh_host && latest) { %>
+          <button class="btn btn-outline" style="padding:5px 10px;font-size:12px" onclick="pushOne(<%= l.id %>, this)">Đẩy v<%= latest.version %></button>
+          <% } else { %>—<% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </table>
+    <% if (latest) { %>
+    <button class="btn" style="margin-top:12px" id="pushAllBtn" onclick="pushAll()">🚀 Đẩy tất cả router đã kết nối</button>
+    <% } %>
+    <div class="log" id="pushLog"></div>
+  </div>
+
+  <div class="card">
+    <h2>Lịch sử release</h2>
+    <table>
+      <tr><th>Firmware</th><th>Portal</th><th>File</th><th>Thời gian</th><th>Changelog</th></tr>
+      <% releases.forEach(r => { %>
+      <tr>
+        <td><b>v<%= r.version %></b></td>
+        <td>v<%= r.portal_version %></td>
+        <td><a href="/firmware/download/<%= r.filename %>"><%= r.filename %></a></td>
+        <td><%= r.published_at %></td>
+        <td><%= r.changelog %></td>
+      </tr>
+      <% }) %>
+      <% if (!releases.length) { %><tr><td colspan="5">Chưa có release.</td></tr><% } %>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Push log gần nhất</h2>
+    <table>
+      <tr><th>Thời gian</th><th>Quán</th><th>Version</th><th>Status</th></tr>
+      <% pushes.forEach(p => { %>
+      <tr>
+        <td><%= p.created_at %></td>
+        <td><%= p.display_name || '—' %></td>
+        <td>v<%= p.version %></td>
+        <td style="color:<%= p.status==='ok'?'#10B981':'#EF4444' %>"><b><%= p.status %></b></td>
+      </tr>
+      <% }) %>
+      <% if (!pushes.length) { %><tr><td colspan="4">Chưa đẩy lần nào.</td></tr><% } %>
+    </table>
+  </div>
+</div>
+<script>
+async function pushOne(id, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  const log = document.getElementById('pushLog');
+  log.style.display = 'block';
+  const res = await fetch(`/admin/router/${id}/push-firmware`, { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' }).then(r=>r.json());
+  log.textContent = (log.textContent ? log.textContent+'\n' : '') + JSON.stringify(res, null, 2);
+  btn.disabled = false; btn.textContent = 'Đẩy lại';
+  if (res.ok) setTimeout(()=>location.reload(), 800);
+}
+
+async function pushAll() {
+  const btn = document.getElementById('pushAllBtn');
+  const log = document.getElementById('pushLog');
+  btn.disabled = true; btn.textContent = 'Đang đẩy...';
+  log.style.display = 'block'; log.textContent = 'Push all...';
+  const res = await fetch('/admin/releases/push-all', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' }).then(r=>r.json());
+  log.textContent = JSON.stringify(res, null, 2);
+  btn.disabled = false; btn.textContent = '🚀 Đẩy tất cả router đã kết nối';
+  if (res.ok) setTimeout(()=>location.reload(), 1200);
+}
+</script>
+</body>
+</html>

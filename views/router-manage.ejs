@@ -119,6 +119,19 @@ th{font-size:11px;color:#64748b;text-transform:uppercase}
   </div>
 
   <% if (router && router.ssh_host) { %>
+  <!-- Firmware OTA -->
+  <div class="card">
+    <h2>📦 Firmware trên router</h2>
+    <p style="font-size:13px;color:#475569;margin-bottom:10px">
+      Version hiện tại: <code id="fwVer"><%= router.firmware_version || 'chưa rõ' %></code>
+      · Quản lý release tại <a href="/admin/releases">/admin/releases</a>
+    </p>
+    <button class="btn btn-green" type="button" onclick="pushFw()">⬇ Đẩy firmware mới nhất</button>
+    <div id="fwResult" style="margin-top:8px;font-size:13px"></div>
+  </div>
+  <% } %>
+
+  <% if (router && router.ssh_host) { %>
   <!-- Trạng thái router -->
   <div class="card">
     <h2>📊 Trạng thái <button class="btn btn-outline" style="margin-left:auto;padding:4px 10px;font-size:11px" onclick="refreshStatus()">↻ Làm mới</button></h2>
@@ -164,6 +177,20 @@ th{font-size:11px;color:#64748b;text-transform:uppercase}
 
 <script>
 const LOC_ID = <%= location.id %>;
+
+async function pushFw() {
+  const box = document.getElementById('fwResult');
+  box.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.2);border-top-color:#3B82F6"></span> Đang đẩy firmware...';
+  const res = await fetch(`/admin/router/${LOC_ID}/push-firmware`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+  }).then(r=>r.json());
+  if (res.ok) {
+    box.innerHTML = `<span style="color:#10B981;font-weight:600">✓ Firmware ${res.version||''}</span>`;
+    const el = document.getElementById('fwVer'); if (el && res.version) el.textContent = res.version;
+  } else {
+    box.innerHTML = `<span style="color:#EF4444">✗ ${res.error}</span>`;
+  }
+}
 
 async function testConn() {
   const box = document.getElementById('testResult');

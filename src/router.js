@@ -169,4 +169,53 @@ function esc(s) {
   return String(s || "").replace(/'/g, "'\\''");
 }
 
-module.exports = { testConnection, pushOpenNDSConfig, setWifi, listClients, disconnectClient, getStatus };
+/**
+ * Đẩy gói firmware từ portal xuống router qua SSH:
+ * wget/uclient-fetch latest -> tar xz -> update.sh
+ */
+async function pushFirmwareUpdate(router, { domain, version, filename }) {
+  const file = filename || `h2t-router-${version}.tar.gz`;
+  const base = `https://${domain}`;
+  const cmds = [
+    "mkdir -p /tmp/h2t-fw && rm -rf /tmp/h2t-fw/*",
+    `cd /tmp/h2t-fw && (uclient-fetch -q -O ${esc(file)} '${base}/firmware/download/${esc(file)}' || wget -qO ${esc(file)} '${base}/firmware/download/${esc(file)}')`,
+    `cd /tmp/h2t-fw && mkdir -p extract && tar -xzf ${esc(file)} -C extract`,
+    `cd /tmp/h2t-fw/extract && chmod +x update.sh h2t-check-update.sh 2>/dev/null; echo '${esc(domain)}' > /etc/h2t-wifi/portal_domain 2>/dev/null || (mkdir -p /etc/h2t-wifi && echo '${esc(domain)}' > /etc/h2t-wifi/portal_domain)`,
+  ];
+  if (router.report_token) {
+    cmds.push(`mkdir -p /etc/h2t-wifi && echo '${esc(router.report_token)}' > /etc/h2t-wifi/report_token`);
+  }
+  cmds.push(`cd /tmp/h2t-fw/extract && H2T_FW_VERSION='${esc(version)}' H2T_PORTAL_DOMAIN='${esc(domain)}' ./update.sh`);
+  cmds.push("cat /etc/h2t-wifi/VERSION 2>/dev/null || true");
+
+  const ssh = await connect(router);
+  try {
+    const log = [];
+    let installed = "";
+    for (const c of cmds) {
+      const res = await ssh.execCommand(c);
+      log.push({ cmd: c.slice(0, 120), stdout: res.stdout, stderr: res.stderr, code: res.code });
+      if (res.code !== 0) {
+        throw new Error(res.stderr || res.stdout || `cmd failed: ${c.slice(0, 80)}`);
+      }
+      if (c.includes("VERSION")) installed = (res.stdout || "").trim();
+    }
+    return { ok: true, version: installed || version, log };
+  } finally {
+    ssh.dispose();
+  }
+}
+
+async function readRemoteFirmwareVersion(router) {
+  try {
+    const out = await run(router, "cat /etc/h2t-wifi/VERSION 2>/dev/null || echo ''");
+    return { ok: true, version: out.trim() };
+  } catch (e) {
+    return { ok: false, error: e.message, version: "" };
+  }
+}
+
+module.exports = {
+  testConnection, pushOpenNDSConfig, setWifi, listClients, disconnectClient, getStatus,
+  pushFirmwareUpdate, readRemoteFirmwareVersion,
+};

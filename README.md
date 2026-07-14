@@ -130,6 +130,61 @@ Checklist khi nghi ngờ lộ:
 
 Để trống `ZALO_*` = dry-run (chỉ ghi `zns_log`). Milestone visit cấu hình bằng `ZNS_VISIT_MILESTONE`.
 
+## Versioning — Portal & Firmware router
+
+Mỗi lần update tách 2 số version:
+
+| Thành phần | File | Công bố |
+|-----------|------|---------|
+| **Portal** | `package.json` → `version` | Deploy code + PM2 restart |
+| **Firmware router** | `firmware/VERSION` | `npm run release` hoặc `/admin/releases` → Publish |
+
+Luồng OTA:
+
+```
+Sửa firmware/src/*  →  bump firmware/VERSION  →  Publish
+        ↓
+data/firmware/h2t-router-<ver>.tar.gz  +  /firmware/latest.json|.env
+        ↓
+Router cron (h2t-check-update) tự tải  — hoặc Admin bấm "Đẩy firmware"
+```
+
+Endpoint công khai (router tải):
+
+- `GET /firmware/latest.json` / `latest.env`
+- `GET /firmware/download/h2t-router-<ver>.tar.gz`
+- `POST /api/firmware/report` — router báo version sau khi update
+
+Admin: `/admin/releases` — publish, đẩy 1 quán / tất cả, lịch sử.
+
+CLI:
+
+```bash
+# Tăng version
+#  - package.json  (portal)
+#  - firmware/VERSION  (router package)
+
+npm run release -- --changelog "OTA agent + cron 6h"
+./scripts/deploy.sh user@vps   # git pull + release + pm2 restart
+```
+
+Health check: `curl https://wifi.06.com.vn/health` → `portal_version`, `firmware_version`, `firmware_latest`.
+
+## Tailscale ACL
+
+Mẫu khóa mesh chỉ Portal → Router SSH: xem `docs/tailscale-acl.json`.
+Gắn `tag:portal` cho VPS, `tag:router` cho authkey enroll.
+
+## Zalo ZNS
+
+```bash
+npm run zns-check          # kiểm tra cấu hình (không gửi tin)
+# nếu đủ ZALO_* nhưng thiếu token:
+node scripts/zalo-set-token.js <access> <refresh>
+```
+
+Milestone gửi tin: `ZNS_VISIT_MILESTONE` (mặc định 3).
+
 ## Pháp lý
 
 Portal có dòng đồng ý thu thập SĐT (NĐ 13/2023). Không chia sẻ data bên thứ ba; có kênh xoá số khi khách yêu cầu.

@@ -8,6 +8,8 @@ const routerCtl = require("./router");
 const enroll  = require("./enroll");
 const secrets = require("./secrets");
 const { createRateLimiter } = require("./rate-limit");
+const versioning = require("./version");
+const fs = require("fs");
 
 const app = express();
 app.set("view engine", "ejs");
@@ -86,7 +88,11 @@ app.get("/preview/:id", (req, res) => {
 app.get("/admin", adminAuth, (req, res) => {
   res.render("admin",{ stats:store.stats(), recent:store.recentVisits(50),
     zns:store.recentZns(30), locations:store.listLocations(),
-    defaultFaskey:process.env.DEFAULT_FASKEY||"", saved:req.query.saved==="1" });
+    defaultFaskey:process.env.DEFAULT_FASKEY||"", saved:req.query.saved==="1",
+    portalVersion: versioning.portalVersion(),
+    firmwareVersion: versioning.firmwareVersion(),
+    firmwareLatest: versioning.readLatestManifest(),
+  });
 });
 
 app.post("/admin/locations", adminAuth, (req, res) => {
@@ -279,7 +285,133 @@ app.get("/admin/router/:id/status", adminAuth, async (req, res) => {
   }
 });
 
-app.get("/health", (_,res) => res.json({ok:true}));
+app.get("/health", (_,res) => res.json({
+  ok: true,
+  portal_version: versioning.portalVersion(),
+  firmware_version: versioning.firmwareVersion(),
+  firmware_latest: versioning.readLatestManifest()?.version || null,
+}));
+
+/* ── Firmware OTA (public download + report) ───────────────── */
+app.get("/firmware/latest.json", publicLimiter, (req, res) => {
+  const m = versioning.readLatestManifest();
+  if (!m) return res.status(404).json({ error: "Chưa publish firmware nào. Vào /admin/releases." });
+  res.set("Cache-Control", "no-store").json(m);
+});
+
+app.get("/firmware/latest.env", publicLimiter, (req, res) => {
+  const p = path.join(versioning.FW_DIST, "latest.env");
+  if (!fs.existsSync(p)) return res.status(404).type("text/plain").send("# no release\n");
+  res.set("Cache-Control", "no-store").type("text/plain").send(fs.readFileSync(p, "utf8"));
+});
+
+app.get("/firmware/download/:file", publicLimiter, (req, res) => {
+  const full = versioning.firmwareFilePath(req.params.file);
+  if (!full) return res.status(404).send("Not found");
+  res.set("Cache-Control", "no-store");
+  res.download(full, path.basename(full));
+});
+
+app.post("/api/firmware/report", publicLimiter, (req, res) => {
+  const token = (req.body.token || "").trim();
+  const version = (req.body.version || "").trim().slice(0, 32);
+  const gateway = (req.body.gateway_name || "").trim();
+  const router = store.findRouterByReportToken(token);
+  if (!router) return res.status(404).json({ ok:false, error:"invalid token" });
+  if (gateway && router.gateway_name && gateway !== router.gateway_name) {
+    return res.status(403).json({ ok:false, error:"gateway mismatch" });
+  }
+  if (version) store.setRouterFirmwareVersion(router.location_id, version);
+  res.json({ ok:true, version });
+});
+
+/* ── Admin: Releases ─────────────────────────────────────────── */
+app.get("/admin/releases", adminAuth, (req, res) => {
+  res.render("releases", {
+    portalVersion: versioning.portalVersion(),
+    firmwareVersion: versioning.firmwareVersion(),
+    latest: versioning.readLatestManifest(),
+    releases: store.listFirmwareReleases(30),
+    packages: versioning.listBuiltPackages(),
+    pushes: store.recentFirmwarePushes(30),
+    locations: store.listLocations().map(l => {
+      const r = store.findRouterByLocation(l.id);
+      return { ...l, router: r ? { ssh_host: r.ssh_host, firmware_version: r.firmware_version } : null };
+    }),
+    published: req.query.published === "1",
+    pushed: req.query.pushed === "1",
+  });
+});
+
+app.post("/admin/releases/publish", adminAuth, (req, res) => {
+  try {
+    const changelog = (req.body.changelog || "").trim().slice(0, 2000);
+    const domain = req.body.domain || req.get("host");
+    const built = versioning.buildFirmwarePackage({ changelog, portalDomain: domain });
+    store.upsertFirmwareRelease({
+      version: built.version,
+      portal_version: built.portal_version,
+      changelog: built.changelog,
+      sha256: built.sha256,
+      filename: built.filename,
+      size_bytes: built.size,
+    });
+    res.redirect("/admin/releases?published=1");
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("Publish thất bại: " + e.message);
+  }
+});
+
+app.post("/admin/router/:id/push-firmware", adminAuth, async (req, res) => {
+  const loc = store.findLocationById(req.params.id);
+  const router = store.findRouterByLocation(req.params.id);
+  if (!loc || !router?.ssh_host) return res.json({ ok:false, error:"Chưa có router SSH." });
+  const latest = versioning.readLatestManifest();
+  if (!latest) return res.json({ ok:false, error:"Chưa publish firmware." });
+  store.ensureReportToken(loc.id);
+  const routerFresh = store.findRouterByLocation(loc.id);
+  try {
+    const domain = req.body.domain || req.get("host");
+    const result = await routerCtl.pushFirmwareUpdate(routerFresh, {
+      domain, version: latest.version, filename: latest.filename,
+    });
+    store.setRouterFirmwareVersion(loc.id, result.version || latest.version);
+    store.logFirmwarePush(loc.id, latest.version, "ok", JSON.stringify(result.log||[]).slice(0, 2000));
+    res.json(result);
+  } catch (e) {
+    store.logFirmwarePush(loc.id, latest.version, "failed", e.message);
+    res.json({ ok:false, error: e.message });
+  }
+});
+
+app.post("/admin/releases/push-all", adminAuth, async (req, res) => {
+  const latest = versioning.readLatestManifest();
+  if (!latest) return res.json({ ok:false, error:"Chưa publish firmware." });
+  const domain = req.body.domain || req.get("host");
+  const results = [];
+  for (const loc of store.listLocations()) {
+    const router = store.findRouterByLocation(loc.id);
+    if (!router?.ssh_host) {
+      results.push({ id: loc.id, name: loc.display_name, ok:false, error:"no ssh" });
+      continue;
+    }
+    store.ensureReportToken(loc.id);
+    try {
+      const r = store.findRouterByLocation(loc.id);
+      const out = await routerCtl.pushFirmwareUpdate(r, {
+        domain, version: latest.version, filename: latest.filename,
+      });
+      store.setRouterFirmwareVersion(loc.id, out.version || latest.version);
+      store.logFirmwarePush(loc.id, latest.version, "ok", "push-all");
+      results.push({ id: loc.id, name: loc.display_name, ok:true, version: out.version });
+    } catch (e) {
+      store.logFirmwarePush(loc.id, latest.version, "failed", e.message);
+      results.push({ id: loc.id, name: loc.display_name, ok:false, error: e.message });
+    }
+  }
+  res.json({ ok:true, version: latest.version, results });
+});
 
 /* ── Gói cài đặt tự động cho router ─────────────────────────── */
 
@@ -294,17 +426,38 @@ app.get("/install/:token.sh", publicLimiter, (req, res) => {
       .send("echo 'Server chưa cấu hình TAILSCALE_AUTHKEY trong .env. Liên hệ quản trị viên.'");
   }
 
+  // Đảm bảo đã có gói firmware để enroll tải
+  if (!versioning.readLatestManifest()) {
+    try {
+      const built = versioning.buildFirmwarePackage({
+        changelog: "Auto-publish on first enroll",
+        portalDomain: req.get("host"),
+      });
+      store.upsertFirmwareRelease({
+        version: built.version, portal_version: built.portal_version,
+        changelog: built.changelog, sha256: built.sha256,
+        filename: built.filename, size_bytes: built.size,
+      });
+    } catch (e) {
+      console.warn("[firmware] auto-publish failed:", e.message);
+    }
+  }
+
   // Sinh keypair lần đầu nếu quán này chưa có
   let router = store.findRouterByLocation(loc.id);
   if (!router || !router.ssh_pubkey) {
     const { pub, priv } = enroll.generateKeypair(`h2t-${loc.gateway_name}`);
     router = store.ensureRouterRecord(loc.id, pub, priv);
   }
+  const reportToken = store.ensureReportToken(loc.id);
+  const fw = versioning.readLatestManifest();
 
   const domain = req.get("host");
   const script = enroll.buildInstallScript({
     location: loc, domain, token: loc.enroll_token,
     pubkey: router.ssh_pubkey, tailscaleAuthKey: process.env.TAILSCALE_AUTHKEY,
+    firmwareVersion: fw?.version || versioning.firmwareVersion(),
+    reportToken,
   });
   res.set("Cache-Control", "no-store");
   res.type("text/x-shellscript").send(script);
@@ -321,7 +474,9 @@ app.post("/api/enroll/:token", publicLimiter, (req, res) => {
     return res.status(400).json({ ok:false, error:"missing or invalid ts_ip" });
   }
   store.markRouterEnrolled(loc.id, { tsIp: ts_ip, model });
-  res.json({ ok:true, one_shot: (process.env.ENROLL_ONE_SHOT || "1") !== "0" });
+  const fw = versioning.readLatestManifest();
+  if (fw) store.setRouterFirmwareVersion(loc.id, fw.version);
+  res.json({ ok:true, one_shot: (process.env.ENROLL_ONE_SHOT || "1") !== "0", firmware_version: fw?.version || null });
 });
 
 // Tạo lại token (vô hiệu hoá link cũ) — dùng khi nghi ngờ link bị lộ
@@ -330,4 +485,19 @@ app.post("/admin/locations/:id/regen-token", adminAuth, (req, res) => {
   res.redirect(`/admin/router/${req.params.id}?regen=1`);
 });
 
-app.listen(PORT, () => console.log(`H2T WiFi Marketing : http://0.0.0.0:${PORT}`));
+// Auto-publish firmware lần đầu khi server start (nếu chưa có)
+try {
+  if (!versioning.readLatestManifest()) {
+    const built = versioning.buildFirmwarePackage({ changelog: "Initial firmware package" });
+    store.upsertFirmwareRelease({
+      version: built.version, portal_version: built.portal_version,
+      changelog: built.changelog, sha256: built.sha256,
+      filename: built.filename, size_bytes: built.size,
+    });
+    console.log(`[firmware] published ${built.version} (${built.filename})`);
+  }
+} catch (e) {
+  console.warn("[firmware] bootstrap failed:", e.message);
+}
+
+app.listen(PORT, () => console.log(`H2T WiFi Marketing v${versioning.portalVersion()} : http://0.0.0.0:${PORT} (fw ${versioning.firmwareVersion()})`));

@@ -86,6 +86,26 @@ CREATE TABLE IF NOT EXISTS menu_items (
   FOREIGN KEY (location_id) REFERENCES locations(id)
 );
 CREATE INDEX IF NOT EXISTS idx_menu_location ON menu_items(location_id, category, sort_order);
+
+CREATE TABLE IF NOT EXISTS firmware_releases (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  version       TEXT UNIQUE NOT NULL,
+  portal_version TEXT DEFAULT '',
+  changelog     TEXT DEFAULT '',
+  sha256        TEXT DEFAULT '',
+  filename      TEXT NOT NULL,
+  size_bytes    INTEGER DEFAULT 0,
+  published_at  TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS firmware_push_log (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  location_id   INTEGER,
+  version       TEXT NOT NULL,
+  status        TEXT NOT NULL,
+  detail        TEXT DEFAULT '',
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (location_id) REFERENCES locations(id)
+);
 `);
 
 // Migration: thêm cột design mới nếu chưa có
@@ -119,6 +139,8 @@ const routerNewCols = [
   ["ssh_privkey",  "TEXT DEFAULT ''"],
   ["ssh_pubkey",   "TEXT DEFAULT ''"],
   ["enrolled_at",  "TEXT DEFAULT ''"],
+  ["firmware_version", "TEXT DEFAULT ''"],
+  ["report_token", "TEXT DEFAULT ''"],
 ];
 for (const [col, def] of routerNewCols) {
   if (!routerCols.includes(col)) {
@@ -318,5 +340,61 @@ module.exports = {
   toggleMenuItem(id) { db.prepare("UPDATE menu_items SET available = 1 - available WHERE id=?").run(id); },
   setMenuEnabled(locationId, enabled) {
     db.prepare("UPDATE locations SET menu_enabled=? WHERE id=?").run(enabled?1:0, locationId);
+  },
+
+  /* ── Firmware releases / OTA ───────────────────────────────── */
+  upsertFirmwareRelease({ version, portal_version, changelog, sha256, filename, size_bytes }) {
+    db.prepare(`
+      INSERT INTO firmware_releases (version, portal_version, changelog, sha256, filename, size_bytes)
+      VALUES (@version, @portal_version, @changelog, @sha256, @filename, @size_bytes)
+      ON CONFLICT(version) DO UPDATE SET
+        portal_version=excluded.portal_version,
+        changelog=excluded.changelog,
+        sha256=excluded.sha256,
+        filename=excluded.filename,
+        size_bytes=excluded.size_bytes,
+        published_at=datetime('now','localtime')
+    `).run({ version, portal_version, changelog: changelog||'', sha256, filename, size_bytes: size_bytes||0 });
+  },
+  listFirmwareReleases(limit = 20) {
+    return db.prepare("SELECT * FROM firmware_releases ORDER BY id DESC LIMIT ?").all(limit);
+  },
+  getFirmwareRelease(version) {
+    return db.prepare("SELECT * FROM firmware_releases WHERE version=?").get(version);
+  },
+  setRouterFirmwareVersion(locationId, version) {
+    db.prepare("UPDATE routers SET firmware_version=?, last_seen=datetime('now','localtime') WHERE location_id=?")
+      .run(version, locationId);
+  },
+  ensureReportToken(locationId) {
+    const r = db.prepare("SELECT report_token FROM routers WHERE location_id=?").get(locationId);
+    if (r?.report_token) return r.report_token;
+    const token = crypto.randomBytes(24).toString("hex");
+    const ex = db.prepare("SELECT id FROM routers WHERE location_id=?").get(locationId);
+    if (ex) {
+      db.prepare("UPDATE routers SET report_token=? WHERE location_id=?").run(token, locationId);
+    } else {
+      db.prepare("INSERT INTO routers (location_id, ssh_host, report_token) VALUES (?, '', ?)").run(locationId, token);
+    }
+    return token;
+  },
+  findRouterByReportToken(token) {
+    if (!token || token.length < 24) return null;
+    return withDecryptedPassword(
+      db.prepare(`
+        SELECT r.*, l.gateway_name, l.display_name FROM routers r
+        JOIN locations l ON l.id=r.location_id WHERE r.report_token=?
+      `).get(token)
+    );
+  },
+  logFirmwarePush(locationId, version, status, detail) {
+    db.prepare("INSERT INTO firmware_push_log (location_id, version, status, detail) VALUES (?,?,?,?)")
+      .run(locationId || null, version, status, detail || "");
+  },
+  recentFirmwarePushes(limit = 30) {
+    return db.prepare(`
+      SELECT p.*, l.display_name, l.gateway_name FROM firmware_push_log p
+      LEFT JOIN locations l ON l.id=p.location_id
+      ORDER BY p.id DESC LIMIT ?`).all(limit);
   },
 };

@@ -46,6 +46,7 @@ async function main() {
     ...process.env,
     PORT: String(PORT),
     DB_PATH: DB,
+    FW_DIST: path.join(__dirname, "..", "data", `fw-smoke-${process.pid}`),
     ADMIN_USER,
     ADMIN_PASS,
     DEFAULT_FASKEY: "smoke-faskey",
@@ -69,7 +70,7 @@ async function main() {
       if (boot.includes("H2T WiFi Marketing") || boot.includes(`:${PORT}`)) {
         clearInterval(iv);
         resolve(true);
-      } else if (Date.now() - t0 > 8000) {
+      } else if (Date.now() - t0 > 12000) {
         clearInterval(iv);
         resolve(false);
       }
@@ -85,6 +86,21 @@ async function main() {
   const fails = [];
   try {
     await req("GET", "/health", { expectStatus: 200 });
+    const health = await req("GET", "/health", { expectStatus: 200 });
+    let healthJson;
+    try { healthJson = JSON.parse(health.text); } catch { fails.push("health không phải JSON"); }
+    if (healthJson && !healthJson.portal_version) fails.push("health thiếu portal_version");
+    if (healthJson && !healthJson.firmware_version) fails.push("health thiếu firmware_version");
+
+    const latest = await req("GET", "/firmware/latest.json", { expectStatus: 200 });
+    let latestJson;
+    try { latestJson = JSON.parse(latest.text); } catch { fails.push("latest.json invalid"); }
+    if (latestJson && !latestJson.filename) fails.push("latest.json thiếu filename");
+    await req("GET", "/firmware/latest.env", { expectStatus: 200 });
+    if (latestJson?.filename) {
+      const dl = await req("GET", `/firmware/download/${latestJson.filename}`, { expectStatus: 200 });
+      if (!dl.text || dl.text.length < 50) fails.push("firmware tarball rỗng");
+    }
 
     // Tạo quán qua CLI logic (reuse store after server boot — add via POST)
     const form = new URLSearchParams({
@@ -127,6 +143,10 @@ async function main() {
       expectStatus: 200,
     });
     await req("GET", `/admin/router/${id}`, {
+      headers: { Authorization: authHeader() },
+      expectStatus: 200,
+    });
+    await req("GET", "/admin/releases", {
       headers: { Authorization: authHeader() },
       expectStatus: 200,
     });
@@ -182,6 +202,7 @@ async function main() {
     try { fs.rmSync(DB, { force: true }); } catch {}
     try { fs.rmSync(DB + "-wal", { force: true }); } catch {}
     try { fs.rmSync(DB + "-shm", { force: true }); } catch {}
+    try { fs.rmSync(env.FW_DIST, { recursive: true, force: true }); } catch {}
   }
 
   if (fails.length) {
@@ -189,7 +210,7 @@ async function main() {
     fails.forEach((f) => console.error(" -", f));
     process.exit(1);
   }
-  console.log("SMOKE OK — health, admin, preview, menu, map, router, FAS, enroll one-shot");
+  console.log("SMOKE OK — health+version, firmware OTA, admin, preview, menu, map, router, FAS, enroll one-shot");
 }
 
 main().catch((e) => {

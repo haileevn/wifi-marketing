@@ -35,8 +35,13 @@ form.add input{padding:9px 12px;border:1px solid var(--line);border-radius:8px;f
 <div class="wrap">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
     <div><h1>H2T WiFi Marketing</h1>
-    <p class="sub">Hệ thống thu thập khách hàng qua WiFi cho chuỗi quán</p></div>
-    <a class="btn" href="/admin/map" style="background:#7C3AED">🗺️ Bản đồ các quán</a>
+    <p class="sub">Portal v<%= typeof portalVersion!=='undefined'?portalVersion:'?' %>
+      · Firmware <%= typeof firmwareLatest!=='undefined'&&firmwareLatest ? ('v'+firmwareLatest.version) : ('src v'+(typeof firmwareVersion!=='undefined'?firmwareVersion:'?')) %>
+      — thu thập khách qua WiFi</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn" href="/admin/releases" style="background:#0F766E">📦 Releases</a>
+      <a class="btn" href="/admin/map" style="background:#7C3AED">🗺️ Bản đồ các quán</a>
+    </div>
   </div>
 
   <% if (saved) { %><div class="saved">✓ Đã lưu thay đổi thành công.</div><% } %>
