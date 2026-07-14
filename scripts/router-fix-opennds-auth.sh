@@ -56,6 +56,50 @@ BINSCRIPT
 chmod +x /etc/opennds/h2t-binauth.sh
 uci set opennds.@opennds[0].binauth='/etc/opennds/h2t-binauth.sh'
 
+# Authmon cron 60s — MAC offline → portal
+cat > /etc/opennds/h2t-authmon.sh << 'AUTHMON'
+#!/bin/sh
+GATEWAY="$GW"
+TOKEN="$TOKEN"
+DOMAIN="$DOMAIN"
+STATE=/tmp/h2t-authmon-macs.txt
+CUR=/tmp/h2t-authmon-cur.txt
+report_end() {
+  MAC="$1"
+  [ -z "$MAC" ] && return 0
+  DATA="token=$TOKEN&mac=$MAC&event=authmon_offline&gateway_name=$GATEWAY"
+  (wget -q -O - --post-data="$DATA" "https://$DOMAIN/api/session/end" 2>/dev/null \
+    || uclient-fetch -q -O - --post-data="$DATA" "https://$DOMAIN/api/session/end" 2>/dev/null) || true
+}
+: > "$CUR"
+ndsctl clients 2>/dev/null | while IFS= read -r line; do
+  case "$line" in
+    *MAC:*) _mac=$(echo "$line" | awk '{print $2}' | tr 'A-Z' 'a-z') ;;
+    *State:*)
+      echo "$line" | grep -qiE 'Auth|Preauth' && [ -n "$_mac" ] && echo "$_mac" >> "$CUR"
+      _mac=""
+      ;;
+  esac
+done
+sort -u "$CUR" -o "$CUR" 2>/dev/null || true
+if [ -f "$STATE" ]; then
+  while IFS= read -r oldmac; do
+    [ -z "$oldmac" ] && continue
+    grep -qxF "$oldmac" "$CUR" 2>/dev/null || report_end "$oldmac"
+  done < "$STATE"
+fi
+cp "$CUR" "$STATE" 2>/dev/null || true
+AUTHMON
+chmod +x /etc/opennds/h2t-authmon.sh
+opkg install cron 2>/dev/null || true
+/etc/init.d/cron enable 2>/dev/null; /etc/init.d/cron start 2>/dev/null || true
+mkdir -p /etc/crontabs
+touch /etc/crontabs/root
+grep -v h2t-authmon /etc/crontabs/root > /tmp/cron.tmp 2>/dev/null || true
+mv /tmp/cron.tmp /etc/crontabs/root 2>/dev/null || true
+grep -q h2t-authmon /etc/crontabs/root 2>/dev/null || echo '* * * * * /etc/opennds/h2t-authmon.sh' >> /etc/crontabs/root
+/etc/init.d/cron restart 2>/dev/null || true
+
 # DNS + HTTP/HTTPS trước auth (portal)
 uci -q delete opennds.@opennds[0].preauthenticated_users
 uci add_list opennds.@opennds[0].preauthenticated_users='allow udp port 53'

@@ -343,6 +343,30 @@ app.post("/admin/survey/:id/:qid/delete", adminAuth, (req, res) => {
   res.redirect(`/admin/survey/${req.params.id}?saved=1`);
 });
 
+app.get("/admin/survey/:id/export.csv", adminAuth, (req, res) => {
+  const loc = store.findLocationById(req.params.id);
+  if (!loc) return res.status(404).send("Not found");
+  const rows = store.exportSurveyAnswers(loc.id);
+  const esc = (s) => `"${String(s || "").replace(/"/g, '""')}"`;
+  const body = rows.map(r =>
+    [r.created_at, r.phone, r.name, r.question_text, r.answer_text].map(esc).join(",")
+  ).join("\n");
+  const fname = `khao-sat-${loc.gateway_name}-${new Date().toISOString().slice(0, 10)}.csv`;
+  res.set("Content-Type", "text/csv; charset=utf-8")
+    .set("Content-Disposition", `attachment; filename=${fname}`);
+  res.send("\uFEFF" + "thoi_gian,phone,name,cau_hoi,tra_loi\n" + body);
+});
+
+app.get("/admin/survey/:id/report", adminAuth, (req, res) => {
+  const loc = store.findLocationById(req.params.id);
+  if (!loc) return res.redirect("/admin");
+  res.render("survey-report", {
+    location: loc,
+    stats: store.surveyAnswerStats(loc.id),
+    rows: store.exportSurveyAnswers(loc.id),
+  });
+});
+
 /* ── Menu công khai (khách xem sau khi kết nối WiFi) ────────────── */
 app.get("/menu/:id", (req, res) => {
   const loc = store.findLocationById(req.params.id);

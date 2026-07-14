@@ -362,6 +362,17 @@ module.exports = {
     return Object.values(byQ);
   },
 
+  exportSurveyAnswers(locationId) {
+    return db.prepare(`
+      SELECT sa.created_at, c.phone, c.name, sq.question_text, sq.question_type, sa.answer_text
+      FROM survey_answers sa
+      JOIN customers c ON c.id = sa.customer_id
+      JOIN survey_questions sq ON sq.id = sa.question_id
+      WHERE sa.location_id = ?
+      ORDER BY sa.created_at DESC, sa.id DESC
+    `).all(locationId);
+  },
+
   listGuestGroups({ locationId = null, limit = 100 } = {}) {
     const where = locationId ? "WHERE l.id = ?" : "";
     const params = locationId ? [locationId, limit] : [limit];

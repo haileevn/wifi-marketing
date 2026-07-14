@@ -37,6 +37,10 @@ h1{font-size:20px;font-weight:800}
   <div class="head">
     <a class="back" href="/admin">←</a>
     <h1>📋 Khảo sát — <%= location.display_name %></h1>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <a class="btn btn-outline" href="/admin/survey/<%= location.id %>/export.csv" style="text-decoration:none;padding:8px 14px;font-size:12px">⬇ CSV</a>
+      <a class="btn btn-outline" href="/admin/survey/<%= location.id %>/report" target="_blank" style="text-decoration:none;padding:8px 14px;font-size:12px">📄 Report / PDF</a>
+    </div>
   </div>
   <% if (saved) { %><div class="saved">✓ Đã lưu</div><% } %>
 

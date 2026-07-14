@@ -476,8 +476,19 @@ function collectSettings() {
     require_name: getVal('f_require_name'),
     custom_css:   getVal('f_custom_css'),
     zalo_link:    getVal('f_zalo_link'),
+    template_id:  getVal('f_template_id') || 'classic',
   };
 }
+
+/* Theme CSS — mirror src/portal-themes.js */
+const PORTAL_THEMES = {
+  classic: `.theme-classic .brand h1{font-family:Georgia,"Times New Roman",serif}.theme-classic .form-head h2{font-weight:800}`,
+  dark: `.theme-dark .brand{background:linear-gradient(160deg,#0a0a14 0%,var(--accent-dark) 55%,#1a1a2e 100%)}.theme-dark .main{background:#12121f}.theme-dark .form-head h2{color:#f5f5ff}.theme-dark .input-wrap,.theme-dark .field>input{background:#1a1a2e;border-color:#2d2d44;color:#f0f0f8}`,
+  fresh: `.theme-fresh .brand{border-radius:0 0 32px 32px}.theme-fresh .logo-wrap{border-radius:24px}.theme-fresh :root{--radius:20px}`,
+  ocean: `.theme-ocean .brand{background:linear-gradient(165deg,#0c4a6e 0%,var(--accent) 50%,#38bdf8 100%)}.theme-ocean .btn-submit{border-radius:999px}`,
+  sunset: `.theme-sunset .brand{background:linear-gradient(150deg,#7c2d12 0%,var(--accent) 40%,#fbbf24 120%)}.theme-sunset .brand h1{font-family:Palatino,Georgia,serif}`,
+  minimal: `.theme-minimal .brand{background:var(--card);color:var(--ink);border-bottom:1px solid var(--line)}.theme-minimal .brand::before{display:none}.theme-minimal .wifi-badge{background:var(--bg);color:var(--ink);border:1px solid var(--line)}.theme-minimal .brand-features{display:none}.theme-minimal .btn-submit{background:var(--ink);box-shadow:none;border-radius:8px}`,
+};
 
 /* ── Build portal HTML (mirror server template) ── */
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -487,64 +498,96 @@ function buildPortalHTML(s) {
   const bg     = s.bg_color     || '#F4F6FA';
   const card   = s.card_color   || '#FFFFFF';
   const ink    = s.text_color   || '#1A1F2E';
-  const muted  = ink + '88';
+  const theme  = (s.template_id || 'classic').toLowerCase();
+  const themeCss = PORTAL_THEMES[theme] || PORTAL_THEMES.classic;
+  const coverVar = s.cover_data ? `--cover:url(${s.cover_data});` : '';
+  const brandClass = s.cover_data ? 'brand has-cover' : 'brand';
 
   const logoHTML = s.logo_data
-    ? `<img src="${s.logo_data}" alt="Logo" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px">`
-    : `<svg style="width:48px;height:48px" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" fill="${accent}" opacity=".15"/><path d="M12 28a12 12 0 0 1 24 0" stroke="${accent}" stroke-width="2.5" stroke-linecap="round"/><path d="M17 32a7 7 0 0 1 14 0" stroke="${accent}" stroke-width="2.5" stroke-linecap="round"/><circle cx="24" cy="36" r="2" fill="${accent}"/></svg>`;
+    ? `<img src="${s.logo_data}" alt="Logo">`
+    : `<svg class="logo-fallback" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" fill="var(--accent)" opacity=".15"/><path d="M12 28a12 12 0 0 1 24 0" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/><path d="M17 32a7 7 0 0 1 14 0" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/><circle cx="24" cy="36" r="2" fill="var(--accent)"/></svg>`;
 
-  const promoHTML = s.promo_text
-    ? `<p style="margin-top:20px;padding:14px 16px;font-size:13px;line-height:1.5;text-align:left;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:12px">${esc(s.promo_text)}</p>` : '';
-
+  const promoHTML = s.promo_text ? `<p class="promo">${esc(s.promo_text)}</p>` : '';
   const nameHTML = s.show_name === '1'
-    ? `<div style="margin-bottom:16px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Họ tên</label>
-       <input type="text" placeholder="VD: Nguyễn Văn A" style="width:100%;padding:14px 16px;font-size:16px;border:1.5px solid rgba(0,0,0,.1);border-radius:16px;box-sizing:border-box"></div>` : '';
-
+    ? `<div class="field"><label>Họ tên</label><input type="text" placeholder="VD: Nguyễn Văn A"></div>` : '';
   const btnLabel = esc(s.btn_text || 'Kết nối Internet');
+  const zaloHTML = s.zalo_link
+    ? `<div class="footer-links"><a class="zalo-link" href="${esc(s.zalo_link)}">Theo dõi Zalo — nhận ưu đãi</a></div>` : '';
 
-  const coverStyle = s.cover_data
-    ? `background-image:linear-gradient(165deg,rgba(0,0,0,.55),rgba(0,0,0,.35)),url(${s.cover_data});background-size:cover;background-position:center;`
-    : '';
-
-  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8">
+  return `<!DOCTYPE html><html lang="vi" class="theme-${theme}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:${bg};color:${ink};min-height:100vh;display:flex;flex-direction:column}
-@media(min-width:720px){body{flex-direction:row}}
-.brand{flex:0 0 42%;background:linear-gradient(145deg,${accent} 0%,color-mix(in srgb,${accent} 70%,#fff) 100%);color:#fff;padding:40px 32px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;${coverStyle}}
-.brand h1{font-size:24px;font-weight:800;margin:12px 0 6px}
-.brand p{font-size:15px;opacity:.9}
-.logo{width:88px;height:88px;background:#fff;border-radius:20px;padding:10px;margin:0 auto;box-shadow:0 12px 40px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center}
-.badge{display:inline-block;background:rgba(255,255,255,.2);padding:8px 16px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase;margin-bottom:20px}
-.main{flex:1;padding:40px 32px;display:flex;align-items:center;justify-content:center}
-.shell{max-width:380px;width:100%}
-.shell h2{font-size:22px;font-weight:800;margin-bottom:6px}
-.shell .sub{font-size:14px;color:${muted};margin-bottom:24px}
-.input-wrap{display:flex;border:1.5px solid rgba(0,0,0,.1);border-radius:16px;overflow:hidden;margin-bottom:16px;background:${card}}
-.prefix{padding:14px;background:rgba(0,0,0,.04);font-weight:600;font-size:14px;border-right:1px solid rgba(0,0,0,.08)}
+:root{
+  --accent:${accent};--accent-dark:color-mix(in srgb,${accent} 82%,#000);
+  --bg:${bg};--card:${card};--ink:${ink};
+  --muted:color-mix(in srgb,${ink} 55%,transparent);
+  --line:color-mix(in srgb,${ink} 10%,transparent);
+  --radius:16px;${coverVar}
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;line-height:1.5}
+.page{display:flex;flex-direction:column;min-height:100vh}
+@media(min-width:720px){.page{flex-direction:row}}
+.brand{position:relative;overflow:hidden;background:linear-gradient(145deg,var(--accent-dark) 0%,var(--accent) 45%,color-mix(in srgb,var(--accent) 70%,#fff) 100%);color:#fff;padding:32px 28px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.brand.has-cover{background-image:linear-gradient(165deg,rgba(0,0,0,.62),rgba(0,0,0,.38) 50%,rgba(0,0,0,.5)),var(--cover);background-size:cover;background-position:center}
+@media(min-width:720px){.brand{flex:0 0 42%;max-width:480px;min-height:100vh;padding:48px 40px}}
+.brand::before{content:"";position:absolute;inset:0;opacity:.12;background:radial-gradient(circle at 20% 80%,#fff 0%,transparent 50%);pointer-events:none}
+.brand-inner{position:relative;z-index:1;max-width:320px;width:100%;animation:fadeUp .42s ease-out both}
+.wifi-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:8px 16px;font-size:12px;font-weight:700;text-transform:uppercase;margin-bottom:24px}
+.logo-wrap{width:88px;height:88px;margin:0 auto 20px;border-radius:20px;background:#fff;padding:10px;box-shadow:0 12px 40px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center}
+.logo-wrap img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+.logo-fallback{width:48px;height:48px}
+.brand h1{font-size:clamp(22px,5vw,28px);font-weight:800;margin-bottom:8px}
+.brand .tagline{font-size:15px;opacity:.92}
+.brand .promo{margin-top:20px;padding:14px 16px;font-size:13px;text-align:left;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:12px}
+.brand-features{margin-top:28px;display:flex;flex-direction:column;gap:10px;text-align:left;list-style:none}
+.brand-features li{font-size:13px;opacity:.9}
+.main{flex:1;display:flex;flex-direction:column;justify-content:center;padding:28px 20px}
+@media(min-width:720px){.main{padding:48px 56px;max-width:560px}}
+.form-shell{width:100%;max-width:400px;margin:0 auto;animation:fadeUp .48s ease-out .12s both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.brand-inner,.form-shell{animation:none}}
+.form-head{margin-bottom:24px}
+.form-head .step{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.form-head h2{font-size:22px;font-weight:800}
+.form-head p{font-size:14px;color:var(--muted);margin-top:6px}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field label{font-size:13px;font-weight:600}
+.input-wrap{display:flex;background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.input-prefix{padding:14px;background:color-mix(in srgb,var(--ink) 4%,transparent);font-weight:600;font-size:14px;border-right:1px solid var(--line)}
 .input-wrap input{flex:1;border:none;padding:14px 16px;font-size:16px;outline:none;background:transparent}
-button{width:100%;padding:16px;font-size:16px;font-weight:800;color:#fff;background:${accent};border:none;border-radius:16px;cursor:pointer}
-.note{margin-top:16px;font-size:11px;color:#888;line-height:1.5}
+.field>input{width:100%;padding:14px 16px;font-size:16px;background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius)}
+.btn-submit{margin-top:4px;padding:16px;font-size:16px;font-weight:800;color:#fff;background:linear-gradient(180deg,var(--accent),var(--accent-dark));border:none;border-radius:var(--radius);width:100%;cursor:pointer}
+.trust{margin-top:20px;padding:14px 16px;background:color-mix(in srgb,var(--ink) 3%,transparent);border-radius:12px;font-size:11px;color:var(--muted);line-height:1.55}
+.footer-links{margin-top:20px;text-align:center}
+.zalo-link{font-size:13px;font-weight:700;color:var(--accent);text-decoration:none;padding:10px 16px;border-radius:10px;background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.powered{margin-top:24px;text-align:center;font-size:10px;color:color-mix(in srgb,var(--ink) 35%,transparent)}
+${themeCss}
 ${s.custom_css || ''}
 </style></head><body>
-<aside class="brand">
-  <span class="badge">Free WiFi</span>
-  <div class="logo">${logoHTML}</div>
+<div class="page">
+<aside class="${brandClass}"><div class="brand-inner">
+  <div class="wifi-badge">Free WiFi</div>
+  <div class="logo-wrap">${logoHTML}</div>
   <h1>${esc(s.display_name)}</h1>
-  <p>${esc(s.headline||'WiFi Miễn Phí')}</p>
+  <p class="tagline">${esc(s.headline||'WiFi Miễn Phí')}</p>
   ${promoHTML}
-</aside>
-<main class="main"><div class="shell">
-  <p style="font-size:11px;font-weight:700;color:${accent};text-transform:uppercase;margin-bottom:6px">Bước 1 — Xác thực</p>
-  <h2>Đăng nhập WiFi</h2>
-  <p class="sub">Nhập số điện thoại để kết nối Internet.</p>
-  <div class="input-wrap"><span class="prefix">+84</span><input type="tel" placeholder="9xx xxx xxx"></div>
+  <ul class="brand-features"><li>✓ Kết nối bảo mật</li><li>✓ Truy cập Internet ngay</li></ul>
+</div></aside>
+<main class="main"><div class="form-shell">
+  <div class="form-head">
+    <p class="step">Bước 1 — Xác thực</p>
+    <h2>Đăng nhập WiFi</h2>
+    <p>Nhập số điện thoại để kết nối Internet miễn phí.</p>
+  </div>
+  <div class="input-wrap"><span class="input-prefix">+84</span><input type="tel" placeholder="9xx xxx xxx"></div>
   ${nameHTML}
-  <button type="button">${btnLabel}</button>
-  <p class="note">Bấm "${btnLabel}" nghĩa là bạn đồng ý cho ${esc(s.display_name)} lưu SĐT để gửi ưu đãi.</p>
+  <button class="btn-submit" type="button">${btnLabel}</button>
+  <div class="trust">Bằng việc tiếp tục, bạn đồng ý cho <b>${esc(s.display_name)}</b> lưu số điện thoại để gửi ưu đãi.</div>
+  ${zaloHTML}
+  <p class="powered">Powered by H2T WiFi Marketing</p>
 </div></main>
-</body></html>`;
+</div></body></html>`;
 }
 
 /* ── Refresh preview ── */

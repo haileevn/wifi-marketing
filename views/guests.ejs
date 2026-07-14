@@ -160,6 +160,12 @@ async function disconnectGuest(lid, mac, cid, btn, fromModal) {
     if (btn) { btn.disabled = false; btn.textContent = 'Ngắt'; }
   }
 }
+document.getElementById('syncBtn')?.addEventListener('click', async function() {
+  this.disabled = true; this.textContent = '...';
+  const res = await fetch('/admin/session/sync', { method: 'POST' }).then(r => r.json());
+  if (res.ok) location.reload();
+  else { alert(res.error || 'Lỗi'); this.disabled = false; this.textContent = '↻ Sync ngay'; }
+});
 </script>
 </body>
 </html>

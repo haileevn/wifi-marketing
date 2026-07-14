@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Survey Report — <%= location.display_name %></title>
+<style>
+:root{--ink:#1a202c;--muted:#64748b;--line:#e2e8f0;--accent:#7C3AED}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);padding:32px 28px 48px;background:#fff}
+h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.meta{font-size:13px;color:var(--muted);margin-bottom:28px}
+.section{margin-bottom:28px;page-break-inside:avoid}
+.section h2{font-size:15px;font-weight:700;margin-bottom:12px;border-bottom:2px solid var(--accent);padding-bottom:6px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+.bar-track{flex:1;height:20px;background:#f1f5f9;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;background:var(--accent);border-radius:4px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+th{background:#f8fafc;font-weight:700}
+tr:nth-child(even){background:#fafbfc}
+.toolbar{display:flex;gap:10px;margin-bottom:20px}
+.btn{padding:10px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;display:inline-block}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+@media print{
+  .toolbar{display:none}
+  body{padding:16px}
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button class="btn" type="button" onclick="window.print()">Print / Save PDF</button>
+  <a class="btn btn-outline" href="/admin/survey/<%= location.id %>/export.csv">Download CSV</a>
+  <a class="btn btn-outline" href="/admin/survey/<%= location.id %>">← Back</a>
+</div>
+
+<h1>Survey Report</h1>
+<p class="meta"><%= location.display_name %> · <%= new Date().toLocaleString('vi-VN') %> · <%= rows.length %> responses</p>
+
+<% if (stats && stats.length) { %>
+<div class="section">
+  <h2>Summary</h2>
+  <% stats.forEach(q => { %>
+    <p style="font-size:13px;font-weight:600;margin:14px 0 8px"><%= q.question_text %> (<%= q.total %>)</p>
+    <% q.answers.forEach(a => {
+      const pct = q.total ? Math.round(a.count / q.total * 100) : 0;
+    %>
+    <div class="bar-row">
+      <span style="width:140px;flex-shrink:0"><%= a.text %></span>
+      <div class="bar-track"><div class="bar-fill" style="width:<%= pct %>%"></div></div>
+      <span style="width:48px;text-align:right;font-weight:700"><%= pct %>%</span>
+      <span style="width:32px;text-align:right;color:var(--muted)"><%= a.count %></span>
+    </div>
+    <% }) %>
+  <% }) %>
+</div>
+<% } %>
+
+<div class="section">
+  <h2>Raw responses</h2>
+  <% if (!rows.length) { %>
+    <p style="color:var(--muted);font-size:13px">No survey responses yet.</p>
+  <% } else { %>
+  <table>
+    <thead>
+      <tr><th>Time</th><th>Phone</th><th>Name</th><th>Question</th><th>Answer</th></tr>
+    </thead>
+    <tbody>
+      <% rows.forEach(r => { %>
+      <tr>
+        <td><%= r.created_at %></td>
+        <td><%= r.phone %></td>
+        <td><%= r.name || '—' %></td>
+        <td><%= r.question_text %></td>
+        <td><%= r.answer_text %></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } %>
+</div>
+</body>
+</html>
