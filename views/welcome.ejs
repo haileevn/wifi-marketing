@@ -41,6 +41,9 @@
     <% } %>
     <h1>Đã vào mạng!</h1>
     <p>Chào bạn tại <b><%= location.display_name %></b>. Internet đã mở — chọn tiếp bên dưới nhé.</p>
+    <% if (location.promo_text) { %>
+      <p style="margin:-8px 0 18px;padding:10px 12px;background:color-mix(in srgb,var(--accent) 12%,transparent);border:1.5px dashed var(--accent);border-radius:12px;font-size:13px;line-height:1.45"><%= location.promo_text %></p>
+    <% } %>
     <% if (location.zalo_link) { %>
       <a class="btn btn-primary" href="<%= location.zalo_link %>">Nhận ưu đãi Zalo</a>
     <% } %>
