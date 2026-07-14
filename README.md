@@ -130,6 +130,31 @@ Checklist khi nghi ngờ lộ:
 
 Để trống `ZALO_*` = dry-run (chỉ ghi `zns_log`). Milestone visit cấu hình bằng `ZNS_VISIT_MILESTONE`.
 
+## Deploy lên VPS (wifi.06.com.vn)
+
+SSH quen thuộc: `h2t@14.161.29.98 -p 22155` (key `luong_h2t_ed25519` có passphrase).
+
+**Cách nhanh (1 lần — gắn deploy key không passphrase + pull code):**
+
+```bash
+# Trong terminal Cursor/Mac (sẽ hiện dialog passphrase):
+./scripts/unlock-and-deploy.sh
+```
+
+Hoặc thủ công sau khi đã SSH được:
+
+```bash
+scp -P 22155 .deploy/id_ed25519_wifi.pub h2t@14.161.29.98:/tmp/wifi-deploy.pub
+scp -P 22155 scripts/bootstrap-on-vps.sh h2t@14.161.29.98:/tmp/
+ssh -p 22155 h2t@14.161.29.98 'bash /tmp/bootstrap-on-vps.sh /tmp/wifi-deploy.pub'
+```
+
+CI: GitHub Actions `Deploy portal` + secrets `DEPLOY_*` đã cấu hình — hoạt động sau khi pubkey có trên VPS.
+
+Tailscale ACL API: điền `TAILSCALE_API_KEY` + `TAILSCALE_TAILNET` rồi `./scripts/apply-tailscale-acl.sh`.
+
+ZNS: điền `ZALO_*` + `node scripts/zalo-set-token.js …` rồi `npm run zns-check`.
+
 ## Versioning — Portal & Firmware router
 
 Mỗi lần update tách 2 số version:
