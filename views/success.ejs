@@ -4,10 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Đã kết nối - <%= location.display_name %></title>
-<!-- Redirect về gateway để OpenNDS mở mạng cho thiết bị -->
-<meta http-equiv="refresh" content="2;url=<%= authUrl %>">
 <style>
-  :root { --accent: <%= location.accent_color %>; }
+  :root { --accent: <%= location.accent_color || '#B4452C' %>; }
   * { margin: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -21,11 +19,19 @@
   }
   .check svg { width: 36px; }
   h1 { font-size: 24px; margin-bottom: 10px; }
-  p { font-size: 15px; color: #6B5B49; max-width: 320px; line-height: 1.6; }
-  .btn-row { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
+  p { font-size: 15px; color: #6B5B49; max-width: 340px; line-height: 1.6; }
+  .btn-auth {
+    display: block; width: 100%; max-width: 320px; margin-top: 22px; padding: 18px 20px;
+    background: var(--accent); color: #fff; border: none; border-radius: 14px;
+    font-size: 17px; font-weight: 800; text-decoration: none; cursor: pointer;
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .btn-auth:active { transform: scale(.98); }
+  .hint { margin-top: 14px; font-size: 12px; color: #94867a; max-width: 320px; line-height: 1.5; }
+  .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; justify-content: center; }
   a.zalo, a.menu-btn {
-    display: inline-block; padding: 13px 26px; border-radius: 12px;
-    font-weight: 700; text-decoration: none;
+    display: inline-block; padding: 12px 20px; border-radius: 12px;
+    font-weight: 700; text-decoration: none; font-size: 14px;
   }
   a.zalo { background: var(--accent); color: #fff; }
   a.menu-btn { background: #fff; color: var(--accent); border: 2px solid var(--accent); }
@@ -37,16 +43,50 @@
       <path d="M4 12.5 L10 18 L20 6"/>
     </svg>
   </div>
-  <h1>Xong rồi, mời bạn dùng mạng!</h1>
-  <p>Đang mở Internet cho thiết bị của bạn... Nếu sau 5 giây chưa vào được mạng,
-     <a href="<%= authUrl %>">bấm vào đây</a>.</p>
+  <h1>Xác nhận thành công!</h1>
+  <p>Nhấn nút bên dưới để <b>mở Internet</b> trên WiFi quán.
+     (Trình duyệt WiFi thường chặn tự động redirect — cần bấm tay.)</p>
+
+  <!-- GET form = user gesture → tránh Chrome about:blank#blocked khi từ HTTPS → http://gateway -->
+  <form id="authForm" method="GET" action="<%= authUrl.split('?')[0] %>" style="width:100%;max-width:320px">
+    <%
+      const qs = (authUrl.split('?')[1] || '');
+      qs.split('&').forEach(pair => {
+        if (!pair) return;
+        const i = pair.indexOf('=');
+        const k = i >= 0 ? pair.slice(0,i) : pair;
+        const v = i >= 0 ? pair.slice(i+1) : '';
+    %>
+      <input type="hidden" name="<%= decodeURIComponent(k) %>" value="<%= decodeURIComponent(v) %>">
+    <% }) %>
+    <button class="btn-auth" type="submit" id="authBtn">🚀 Mở Internet ngay</button>
+  </form>
+
+  <p class="hint">Sau khi bấm, cửa sổ WiFi có thể tự đóng — vậy là đúng. Thử mở Safari/Chrome xem trang web bất kỳ.</p>
+
   <div class="btn-row">
     <% if (location.menu_enabled) { %>
-      <a class="menu-btn" href="/menu/<%= location.id %>" target="_blank">🍽️ Xem Menu</a>
+      <a class="menu-btn" href="/menu/<%= location.id %>">🍽️ Xem Menu</a>
     <% } %>
     <% if (location.zalo_link) { %>
-      <a class="zalo" href="<%= location.zalo_link %>">Nhận ưu đãi qua Zalo quán</a>
+      <a class="zalo" href="<%= location.zalo_link %>">Ưu đãi Zalo</a>
     <% } %>
   </div>
+
+<script>
+(function () {
+  var form = document.getElementById('authForm');
+  var btn = document.getElementById('authBtn');
+  var url = <%- JSON.stringify(authUrl) %>;
+  // Thử auto sau 800ms — một số CPD vẫn cho phép; nếu bị chặn thì user bấm nút
+  setTimeout(function () {
+    try { window.location.replace(url); } catch (e) {}
+  }, 800);
+  form.addEventListener('submit', function () {
+    btn.textContent = 'Đang mở mạng...';
+    btn.disabled = true;
+  });
+})();
+</script>
 </body>
 </html>
