@@ -3,122 +3,341 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>WiFi <%= location.display_name %></title>
+<title>WiFi — <%= location.display_name %></title>
 <style>
 :root{
   --accent: <%- location.accent_color || '#B4452C' %>;
-  --bg:     <%- location.bg_color     || '#FFF6EC' %>;
-  --card:   <%- location.card_color   || '#FFFFFF' %>;
-  --ink:    <%- location.text_color   || '#241610' %>;
+  --accent-dark: color-mix(in srgb, var(--accent) 82%, #000);
+  --bg: <%- location.bg_color || '#F4F6FA' %>;
+  --card: <%- location.card_color || '#FFFFFF' %>;
+  --ink: <%- location.text_color || '#1A1F2E' %>;
+  --muted: color-mix(in srgb, var(--ink) 55%, transparent);
+  --line: color-mix(in srgb, var(--ink) 10%, transparent);
+  --radius: 16px;
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);
-     min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 0 40px}
-.hero{width:100%;background:linear-gradient(160deg,var(--accent) 0%,rgba(0,0,0,.25) 100%),var(--accent);
-      padding:40px 20px 56px;display:flex;flex-direction:column;align-items:center;color:#fff;text-align:center}
-.logo-img{max-height:64px;max-width:180px;margin-bottom:12px;border-radius:10px;object-fit:contain;
-          background:#fff;padding:6px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
-.steam{width:64px;height:44px;margin-bottom:2px}
-.steam path{fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;opacity:.7;animation:rise 2.6s ease-in-out infinite}
-.steam path:nth-child(2){animation-delay:.5s;opacity:.9}
-.steam path:nth-child(3){animation-delay:1s;opacity:.5}
-@keyframes rise{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
-@media(prefers-reduced-motion:reduce){.steam path{animation:none}}
-.bowl{width:80px;margin-bottom:12px}
-.hero h1{font-size:22px;font-weight:800;line-height:1.3;letter-spacing:-.01em;color:#fff}
-.hero .headline{font-size:15px;font-weight:600;opacity:.92;margin-top:4px}
-.auth-card{width:calc(100% - 40px);max-width:380px;background:var(--card);border-radius:20px;
-           box-shadow:0 16px 44px rgba(0,0,0,.18);padding:26px 22px 22px;margin-top:-32px;position:relative;z-index:2}
-.promo{margin-bottom:18px;padding:12px 14px;text-align:center;font-size:14px;line-height:1.4;
-       background:color-mix(in srgb, var(--accent) 8%, transparent);border:1.5px dashed var(--accent);border-radius:12px}
-form{width:100%;display:flex;flex-direction:column;gap:12px}
-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink);opacity:.7}
-input{width:100%;padding:14px 16px;font-size:16px;color:var(--ink);
-      background:color-mix(in srgb, var(--ink) 4%, transparent);border:1.5px solid rgba(0,0,0,.1);border-radius:12px;outline:none;transition:border .15s}
-input:focus{border-color:var(--accent);background:var(--card)}
-.err{color:#C0392B;font-size:13px;font-weight:600;text-align:center;background:#FEF2F2;padding:8px;border-radius:8px}
-button{margin-top:4px;padding:16px;font-size:16px;font-weight:800;color:#fff;letter-spacing:.01em;
-       background:var(--accent);border:none;border-radius:12px;cursor:pointer;box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent)}
-button:active{transform:scale(.98)}
-.note{margin-top:16px;font-size:11px;color:#94867a;text-align:center;line-height:1.5}
-.zalo-link{display:block;margin-top:14px;text-align:center;font-size:13px;color:var(--accent);font-weight:700;text-decoration:none}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;min-height:100dvh;
+  line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+.page{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}
+@media(min-width:720px){
+  .page{flex-direction:row}
+}
+
+/* ── Brand panel ── */
+.brand{
+  position:relative;overflow:hidden;
+  background:linear-gradient(145deg,var(--accent-dark) 0%,var(--accent) 45%,color-mix(in srgb,var(--accent) 70%,#fff) 100%);
+  color:#fff;padding:32px 28px 40px;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
+}
+@media(min-width:720px){
+  .brand{flex:0 0 42%;max-width:480px;min-height:100vh;padding:48px 40px}
+}
+.brand::before{
+  content:"";position:absolute;inset:0;opacity:.12;
+  background:radial-gradient(circle at 20% 80%,#fff 0%,transparent 50%),
+             radial-gradient(circle at 80% 20%,#fff 0%,transparent 40%);
+  pointer-events:none;
+}
+.brand-inner{position:relative;z-index:1;max-width:320px;width:100%}
+.wifi-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.18);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.25);border-radius:999px;
+  padding:8px 16px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  margin-bottom:24px;
+}
+.wifi-badge svg{width:18px;height:18px;flex-shrink:0}
+.logo-wrap{
+  width:88px;height:88px;margin:0 auto 20px;border-radius:20px;
+  background:#fff;padding:10px;box-shadow:0 12px 40px rgba(0,0,0,.18);
+  display:flex;align-items:center;justify-content:center;
+}
+.logo-wrap img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+.logo-fallback{width:48px;height:48px;opacity:.95}
+.brand h1{font-size:clamp(22px,5vw,28px);font-weight:800;line-height:1.25;letter-spacing:-.02em;margin-bottom:8px}
+.brand .tagline{font-size:15px;font-weight:500;opacity:.92;line-height:1.45}
+.brand .promo{
+  margin-top:20px;padding:14px 16px;font-size:13px;line-height:1.5;text-align:left;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:12px;
+}
+.brand-features{margin-top:28px;display:flex;flex-direction:column;gap:10px;text-align:left}
+.brand-features li{
+  list-style:none;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;opacity:.9;
+}
+.brand-features svg{width:18px;height:18px;flex-shrink:0;opacity:.85}
+
+/* ── Form panel ── */
+.main{
+  flex:1;display:flex;flex-direction:column;justify-content:center;
+  padding:28px 20px 32px;padding-bottom:calc(32px + env(safe-area-inset-bottom));
+}
+@media(min-width:720px){
+  .main{padding:48px 56px;max-width:560px}
+}
+.form-shell{width:100%;max-width:400px;margin:0 auto}
+.form-head{margin-bottom:24px}
+.form-head .step{
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--accent);margin-bottom:6px;
+}
+.form-head h2{font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+.form-head p{font-size:14px;color:var(--muted);margin-top:6px}
+
+form{display:flex;flex-direction:column;gap:16px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:600;color:var(--ink)}
+.field label .opt{font-weight:400;color:var(--muted);font-size:12px}
+.field-hint{font-size:11px;color:var(--muted)}
+
+.input-wrap{
+  display:flex;align-items:stretch;background:var(--card);
+  border:1.5px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;transition:border-color .2s,box-shadow .2s;
+}
+.input-wrap:focus-within{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);
+}
+.input-prefix{
+  display:flex;align-items:center;padding:0 14px;
+  background:color-mix(in srgb,var(--ink) 4%,transparent);
+  font-size:14px;font-weight:600;color:var(--muted);
+  border-right:1px solid var(--line);
+}
+.input-wrap input,.input-wrap select{
+  flex:1;border:none;background:transparent;
+  padding:14px 16px;font-size:16px;color:var(--ink);outline:none;min-width:0;
+}
+.input-wrap input::placeholder{color:color-mix(in srgb,var(--ink) 35%,transparent)}
+.field > input,.field > select{
+  width:100%;padding:14px 16px;font-size:16px;color:var(--ink);
+  background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);outline:none;
+  transition:border-color .2s,box-shadow .2s;
+}
+.field > input:focus,.field > select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);
+}
+
+.survey-block{
+  padding:18px 0 4px;margin-top:4px;
+  border-top:1px solid var(--line);
+}
+.survey-block > .survey-title{
+  font-size:13px;font-weight:700;color:var(--ink);margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.survey-block > .survey-title::before{
+  content:"";width:4px;height:16px;background:var(--accent);border-radius:2px;
+}
+
+.err{
+  display:flex;align-items:flex-start;gap:10px;
+  color:#B91C1C;font-size:13px;font-weight:600;
+  background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:12px 14px;
+}
+.err svg{width:18px;height:18px;flex-shrink:0;margin-top:1px}
+
+.btn-submit{
+  margin-top:4px;padding:16px 20px;font-size:16px;font-weight:800;color:#fff;
+  background:linear-gradient(180deg,var(--accent) 0%,var(--accent-dark) 100%);
+  border:none;border-radius:var(--radius);cursor:pointer;
+  box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 35%,transparent);
+  transition:transform .15s,box-shadow .15s;
+  display:flex;align-items:center;justify-content:center;gap:10px;min-height:52px;
+}
+.btn-submit:active{transform:scale(.98)}
+.btn-submit:disabled{opacity:.7;cursor:not-allowed}
+.btn-submit svg{width:20px;height:20px}
+
+.trust{
+  margin-top:20px;padding:14px 16px;
+  background:color-mix(in srgb,var(--ink) 3%,transparent);
+  border-radius:12px;display:flex;gap:12px;align-items:flex-start;
+}
+.trust svg{width:20px;height:20px;flex-shrink:0;color:var(--accent);margin-top:1px}
+.trust p{font-size:11px;color:var(--muted);line-height:1.55}
+.trust b{color:var(--ink);font-weight:600}
+
+.footer-links{margin-top:20px;text-align:center}
+.zalo-link{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:13px;font-weight:700;color:var(--accent);text-decoration:none;
+  padding:10px 16px;border-radius:10px;
+  background:color-mix(in srgb,var(--accent) 8%,transparent);
+  transition:background .15s;
+}
+.zalo-link:active{background:color-mix(in srgb,var(--accent) 15%,transparent)}
+
+.powered{
+  margin-top:auto;padding-top:24px;text-align:center;
+  font-size:10px;color:color-mix(in srgb,var(--ink) 35%,transparent);letter-spacing:.03em;
+}
+
+@media(prefers-reduced-motion:reduce){.btn-submit{transition:none}}
 <%- location.custom_css ? location.custom_css : '' %>
 </style>
 </head>
 <body>
-<div class="hero">
-  <% if (location.logo_data) { %>
-    <img class="logo-img" src="<%- location.logo_data %>" alt="<%= location.display_name %>">
-  <% } else { %>
-    <svg class="steam" viewBox="0 0 72 48" aria-hidden="true">
-      <path d="M22 44 C18 36,26 32,22 24 C18 16,26 12,22 4"/>
-      <path d="M36 46 C32 38,40 34,36 26 C32 18,40 14,36 6"/>
-      <path d="M50 44 C46 36,54 32,50 24 C46 16,54 12,50 4"/>
-    </svg>
-    <svg class="bowl" viewBox="0 0 88 34" aria-hidden="true">
-      <path d="M4 4 H84 C84 22,68 32,44 32 C20 32,4 22,4 4 Z" fill="#fff"/>
-      <ellipse cx="44" cy="4" rx="40" ry="4" fill="var(--accent)" stroke="#fff" stroke-width="2"/>
-    </svg>
-  <% } %>
-  <h1><%= location.display_name %></h1>
-  <p class="headline"><%= location.headline || 'WiFi Miễn Phí' %></p>
-</div>
-
-<div class="auth-card">
-  <% if (location.promo_text) { %>
-    <p class="promo"><%= location.promo_text %></p>
-  <% } %>
-
-  <form method="POST" action="/auth" autocomplete="on">
-    <input type="hidden" name="hid" value="<%= hid %>">
-    <input type="hidden" name="gatewayname" value="<%= gatewayname %>">
-    <input type="hidden" name="gatewayaddress" value="<%= gatewayaddress %>">
-    <input type="hidden" name="gatewayport" value="<%= gatewayport %>">
-    <input type="hidden" name="clientmac" value="<%= clientmac %>">
-    <input type="hidden" name="clientip" value="<%= clientip %>">
-    <input type="hidden" name="originurl" value="<%= originurl %>">
-
-    <label for="phone">Số điện thoại</label>
-    <input id="phone" name="phone" type="tel" inputmode="numeric" placeholder="09xx xxx xxx" required>
-
-    <% if (location.show_name) { %>
-      <label for="name">Tên của bạn<%= location.require_name ? '' : ' (không bắt buộc)' %></label>
-      <input id="name" name="name" type="text" placeholder="Để quán gọi món cho thân quen" <%= location.require_name ? 'required' : '' %>>
-    <% } %>
-
-    <% if (typeof surveyQuestions !== 'undefined' && surveyQuestions.length) { %>
-      <div style="margin-top:8px;padding-top:12px;border-top:1px dashed rgba(0,0,0,.1)">
-        <label style="margin-bottom:10px"><%= location.survey_title || 'Khảo sát nhanh' %></label>
-        <% surveyQuestions.forEach(q => {
-          let opts = [];
-          try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
-        %>
-          <label for="sq<%= q.id %>" style="margin-top:8px;font-size:11px;text-transform:none;letter-spacing:0;font-weight:600">
-            <%= q.question_text %><%= q.required ? ' *' : '' %>
-          </label>
-          <% if (q.question_type === 'select' && opts.length) { %>
-            <select id="sq<%= q.id %>" name="survey_<%= q.id %>" <%= q.required ? 'required' : '' %>
-              style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(0,0,0,.1);font-size:15px;margin-bottom:4px">
-              <option value="">— Chọn —</option>
-              <% opts.forEach(o => { %><option value="<%= o %>"><%= o %></option><% }) %>
-            </select>
-          <% } else { %>
-            <input id="sq<%= q.id %>" name="survey_<%= q.id %>" type="text" placeholder="Câu trả lời..."
-              <%= q.required ? 'required' : '' %>>
-          <% } %>
-        <% }) %>
+<div class="page">
+  <!-- Brand -->
+  <aside class="brand">
+    <div class="brand-inner">
+      <div class="wifi-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <path d="M5 12.5a14 14 0 0 1 14 0"/><path d="M8.5 16a9 9 0 0 1 7 0"/><path d="M12 20h.01"/>
+        </svg>
+        Free WiFi
       </div>
-    <% } %>
 
-    <% if (error) { %><p class="err"><%= error %></p><% } %>
-    <button type="submit"><%= location.btn_text || 'Kết nối Internet' %></button>
-  </form>
+      <div class="logo-wrap">
+        <% if (location.logo_data) { %>
+          <img src="<%- location.logo_data %>" alt="<%= location.display_name %>">
+        <% } else { %>
+          <svg class="logo-fallback" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+            <circle cx="24" cy="24" r="22" fill="var(--accent)" opacity=".15"/>
+            <path d="M12 28a12 12 0 0 1 24 0" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M17 32a7 7 0 0 1 14 0" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="24" cy="36" r="2" fill="var(--accent)"/>
+          </svg>
+        <% } %>
+      </div>
 
-  <p class="note">Bấm "<%= location.btn_text||'Kết nối Internet' %>" nghĩa là bạn đồng ý cho
-  <%= location.display_name %> lưu số điện thoại để gửi ưu đãi. Quán không chia sẻ cho bên thứ ba.</p>
-  <% if (location.zalo_link) { %>
-    <a class="zalo-link" href="<%= location.zalo_link %>">Theo dõi Zalo quán để nhận ưu đãi →</a>
-  <% } %>
+      <h1><%= location.display_name %></h1>
+      <p class="tagline"><%= location.headline || 'WiFi Miễn Phí' %></p>
+
+      <% if (location.promo_text) { %>
+        <p class="promo"><%= location.promo_text %></p>
+      <% } %>
+
+      <ul class="brand-features">
+        <li>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Kết nối bảo mật
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Truy cập Internet ngay
+        </li>
+      </ul>
+    </div>
+  </aside>
+
+  <!-- Form -->
+  <main class="main">
+    <div class="form-shell">
+      <div class="form-head">
+        <p class="step">Bước 1 — Xác thực</p>
+        <h2>Đăng nhập WiFi</h2>
+        <p>Nhập số điện thoại để kết nối Internet miễn phí.</p>
+      </div>
+
+      <form method="POST" action="/auth" autocomplete="on" id="portalForm">
+        <input type="hidden" name="hid" value="<%= hid %>">
+        <input type="hidden" name="gatewayname" value="<%= gatewayname %>">
+        <input type="hidden" name="gatewayaddress" value="<%= gatewayaddress %>">
+        <input type="hidden" name="gatewayport" value="<%= gatewayport %>">
+        <input type="hidden" name="clientmac" value="<%= clientmac %>">
+        <input type="hidden" name="clientip" value="<%= clientip %>">
+        <input type="hidden" name="originurl" value="<%= originurl %>">
+
+        <div class="field">
+          <label for="phone">Số điện thoại <span class="opt">(bắt buộc)</span></label>
+          <div class="input-wrap">
+            <span class="input-prefix">+84</span>
+            <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel"
+              placeholder="9xx xxx xxx" required aria-required="true">
+          </div>
+          <span class="field-hint">Dùng SĐT bạn thường dùng để nhận ưu đãi.</span>
+        </div>
+
+        <% if (location.show_name) { %>
+        <div class="field">
+          <label for="name">Họ tên<% if (!location.require_name) { %> <span class="opt">(không bắt buộc)</span><% } %></label>
+          <input id="name" name="name" type="text" autocomplete="name"
+            placeholder="VD: Nguyễn Văn A" <%= location.require_name ? 'required aria-required="true"' : '' %>>
+        </div>
+        <% } %>
+
+        <% if (typeof surveyQuestions !== 'undefined' && surveyQuestions.length) { %>
+        <div class="survey-block">
+          <p class="survey-title"><%= location.survey_title || 'Khảo sát nhanh' %></p>
+          <% surveyQuestions.forEach(q => {
+            let opts = [];
+            try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
+          %>
+          <div class="field" style="margin-bottom:12px">
+            <label for="sq<%= q.id %>"><%= q.question_text %><%= q.required ? ' *' : '' %></label>
+            <% if (q.question_type === 'select' && opts.length) { %>
+              <select id="sq<%= q.id %>" name="survey_<%= q.id %>" <%= q.required ? 'required' : '' %>>
+                <option value="">— Chọn câu trả lời —</option>
+                <% opts.forEach(o => { %><option value="<%= o %>"><%= o %></option><% }) %>
+              </select>
+            <% } else { %>
+              <input id="sq<%= q.id %>" name="survey_<%= q.id %>" type="text" placeholder="Nhập câu trả lời..."
+                <%= q.required ? 'required' : '' %>>
+            <% } %>
+          </div>
+          <% }) %>
+        </div>
+        <% } %>
+
+        <% if (error) { %>
+        <p class="err" role="alert">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          <%= error %>
+        </p>
+        <% } %>
+
+        <button class="btn-submit" type="submit" id="submitBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6"/>
+          </svg>
+          <%= location.btn_text || 'Kết nối Internet' %>
+        </button>
+      </form>
+
+      <div class="trust">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <p>Bằng việc tiếp tục, bạn đồng ý cho <b><%= location.display_name %></b> lưu số điện thoại để gửi ưu đãi. Thông tin không được chia sẻ cho bên thứ ba.</p>
+      </div>
+
+      <% if (location.zalo_link) { %>
+      <div class="footer-links">
+        <a class="zalo-link" href="<%= location.zalo_link %>" target="_blank" rel="noopener">
+          Theo dõi Zalo — nhận ưu đãi
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+      </div>
+      <% } %>
+
+      <p class="powered">Powered by H2T WiFi Marketing</p>
+    </div>
+  </main>
 </div>
+
+<script>
+(function(){
+  var form = document.getElementById('portalForm');
+  var btn = document.getElementById('submitBtn');
+  var phone = document.getElementById('phone');
+  if (phone) {
+    phone.addEventListener('input', function(){
+      this.value = this.value.replace(/[^\d\s]/g,'').replace(/\s+/g,' ').trim();
+    });
+  }
+  if (form && btn) {
+    form.addEventListener('submit', function(){
+      btn.disabled = true;
+      btn.innerHTML = '<span style="opacity:.9">Đang kết nối...</span>';
+    });
+  }
+})();
+</script>
 </body>
 </html>
