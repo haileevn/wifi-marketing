@@ -558,11 +558,49 @@ app.get("/admin/router/:id/status", adminAuth, async (req, res) => {
   if (!router) return res.json({ ok:false, error:"Chưa cấu hình router." });
   try {
     const status = await routerCtl.getStatus(router);
-    store.updateRouterStatus(router.id, JSON.stringify(status));
-    res.json(status);
+    store.updateRouterStatus(router.id, JSON.stringify({ ...status, source: "ssh" }));
+    res.json({ ...status, source: "ssh" });
   } catch (e) {
-    res.json({ ok:false, error: e.message });
+    const cached = store.getRouterCachedStatus(router.id);
+    if (cached && cached.last_seen) {
+      const ageMin = Math.floor((Date.now() - new Date(cached.last_seen + " GMT+7").getTime()) / 60000);
+      return res.json({
+        ok: true,
+        source: "heartbeat",
+        ssh_error: e.message,
+        stale: ageMin > 15,
+        last_seen: cached.last_seen,
+        uptime: cached.uptime || "—",
+        opennds_running: !!cached.opennds_running || cached.opennds === 1 || cached.opennds === "1",
+        model: cached.model || router.model || "—",
+        client_count: Number(cached.client_count) || 0,
+        firmware_version: cached.firmware_version || router.firmware_version,
+        ts_ip: cached.ts_ip,
+        ssh_listening: cached.ssh_listening === 1 || cached.ssh_listening === "1",
+      });
+    }
+    res.json({ ok:false, error: e.message, hint: "pull-config" });
   }
+});
+
+app.post("/api/router/heartbeat", publicLimiter, (req, res) => {
+  const token = String(req.body.token || req.query.token || "").trim();
+  const router = store.findRouterByPullToken(token);
+  if (!router) return res.status(403).json({ ok: false, error: "invalid token" });
+  const loc = store.findLocationById(router.location_id);
+  if (!loc) return res.status(404).json({ ok: false, error: "location not found" });
+  const payload = {
+    ts_ip: String(req.body.ts_ip || "").trim(),
+    model: String(req.body.model || "").trim().slice(0, 80),
+    firmware_version: String(req.body.firmware_version || "").trim().slice(0, 20),
+    uptime: String(req.body.uptime || "").trim().slice(0, 120),
+    opennds_running: String(req.body.opennds || req.body.opennds_running || "0") === "1",
+    client_count: Number(req.body.client_count) || 0,
+    ssh_listening: String(req.body.ssh_listening || "0") === "1",
+    gateway_name: loc.gateway_name,
+  };
+  store.updateRouterHeartbeat(loc.id, payload);
+  res.json({ ok: true, location_id: loc.id });
 });
 
 app.get("/health", (_,res) => res.json({

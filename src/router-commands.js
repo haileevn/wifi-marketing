@@ -90,14 +90,73 @@ cp "$CUR" "$STATE" 2>/dev/null || true
 }
 
 function sshAccessCmds() {
+  const script = `#!/bin/sh
+# Mở SSH trên mọi interface (gồm tailscale0) — VPS SSH qua 100.x.x.x
+for n in 0 1 2 3; do
+  uci -q get dropbear.@dropbear[\$n] >/dev/null 2>&1 || break
+  uci -q delete dropbear.@dropbear[\$n].Interface 2>/dev/null || true
+  uci set dropbear.@dropbear[\$n].Interface=''
+  uci set dropbear.@dropbear[\$n].Port='22'
+  uci set dropbear.@dropbear[\$n].GatewayPorts='on'
+done
+uci commit dropbear 2>/dev/null || true
+mkdir -p /etc/conf.d
+echo 'DROPBEAR_EXTRA_ARGS="-p 0.0.0.0:22"' > /etc/conf.d/dropbear
+/etc/init.d/dropbear enabled 2>/dev/null; /etc/init.d/dropbear restart 2>/dev/null || true
+grep -q Allow-SSH-Tailscale /etc/config/firewall 2>/dev/null || {
+  uci add firewall rule >/dev/null
+  uci set firewall.@rule[-1].name='Allow-SSH-Tailscale'
+  uci set firewall.@rule[-1].src='*'
+  uci set firewall.@rule[-1].proto='tcp'
+  uci set firewall.@rule[-1].dest_port='22'
+  uci set firewall.@rule[-1].target='ACCEPT'
+  uci commit firewall
+}
+/etc/init.d/firewall reload 2>/dev/null || true
+iptables -C INPUT -i tailscale0 -p tcp --dport 22 -j ACCEPT 2>/dev/null \\
+  || iptables -I INPUT -i tailscale0 -p tcp --dport 22 -j ACCEPT 2>/dev/null || true
+`;
   return [
-    "uci -q delete dropbear.@dropbear[0].Interface 2>/dev/null || true",
-    "uci set dropbear.@dropbear[0].Interface=''",
-    "uci commit dropbear 2>/dev/null || true",
-    "/etc/init.d/dropbear restart 2>/dev/null || true",
-    "uci -q show firewall | grep -q Allow-SSH-Tailscale || (uci add firewall rule >/dev/null; uci set firewall.@rule[-1].name='Allow-SSH-Tailscale'; uci set firewall.@rule[-1].src='tailscale'; uci set firewall.@rule[-1].proto='tcp'; uci set firewall.@rule[-1].dest_port='22'; uci set firewall.@rule[-1].target='ACCEPT'; uci commit firewall; /etc/init.d/firewall reload 2>/dev/null || true)",
+    `cat > /etc/opennds/h2t-ssh-access.sh << 'H2TSSH'\n${script}\nH2TSSH`,
+    "chmod +x /etc/opennds/h2t-ssh-access.sh",
+    "/etc/opennds/h2t-ssh-access.sh",
   ];
 }
+
+function heartbeatInstallCmds(location, domain, reportToken) {
+  const gw = esc(location.gateway_name);
+  const dom = esc(domain);
+  const tok = esc(reportToken || "");
+  const script = `#!/bin/sh
+# H2T heartbeat — báo trạng thái về portal (Admin không cần SSH)
+TOKEN='${tok}'
+DOMAIN='${dom}'
+GW='${gw}'
+[ -z "$TOKEN" ] || [ -z "$DOMAIN" ] && exit 0
+TS_IP=$(tailscale ip -4 2>/dev/null | head -1)
+MODEL=$(cat /tmp/sysinfo/model 2>/dev/null || echo unknown)
+FW=$(cat /etc/h2t-wifi/VERSION 2>/dev/null || echo '')
+UPTIME=$(uptime 2>/dev/null | sed 's/^[[:space:]]*//')
+OPENNDS=0; pgrep -x opennds >/dev/null 2>&1 && OPENNDS=1
+CLIENTS=0
+command -v ndsctl >/dev/null 2>&1 && CLIENTS=$(ndsctl json 2>/dev/null | grep -oE '([0-9a-f]{2}:){5}[0-9a-f]{2}' | sort -u | wc -l | tr -d ' ')
+SSH22=0; netstat -ln 2>/dev/null | grep -q ':22 ' && SSH22=1 || ss -ln 2>/dev/null | grep -q ':22 ' && SSH22=1
+DATA="token=$TOKEN&gateway_name=$GW&ts_ip=$TS_IP&model=$MODEL&firmware_version=$FW&uptime=$UPTIME&opennds=$OPENNDS&client_count=$CLIENTS&ssh_listening=$SSH22"
+(wget -q -O - --post-data="$DATA" "https://$DOMAIN/api/router/heartbeat" 2>/dev/null \\
+  || uclient-fetch -q -O - --post-data="$DATA" "https://$DOMAIN/api/router/heartbeat" 2>/dev/null \\
+  || curl -fsS -X POST -d "$DATA" "https://$DOMAIN/api/router/heartbeat" 2>/dev/null) || true
+`;
+  return [
+    `cat > /etc/opennds/h2t-heartbeat.sh << 'H2THB'\n${script}\nH2THB`,
+    "chmod +x /etc/opennds/h2t-heartbeat.sh",
+    "grep -v h2t-heartbeat /etc/crontabs/root > /tmp/hb.cron 2>/dev/null || true",
+    "mv /tmp/hb.cron /etc/crontabs/root 2>/dev/null || touch /etc/crontabs/root",
+    "grep -q h2t-heartbeat /etc/crontabs/root 2>/dev/null || echo '*/5 * * * * /etc/opennds/h2t-heartbeat.sh' >> /etc/crontabs/root",
+    "/etc/init.d/cron restart 2>/dev/null || true",
+    "/etc/opennds/h2t-heartbeat.sh",
+  ];
+}
+
 
 function buildOpenNDSCommandList(location, domain, sessionMinutes = 720, reportToken = "") {
   return [
@@ -117,6 +176,7 @@ function buildOpenNDSCommandList(location, domain, sessionMinutes = 720, reportT
     `uci set opennds.@opennds[0].sessiontimeout='${Number(sessionMinutes) || 720}'`,
     ...binauthInstallCmds(location, domain, reportToken),
     ...authmonInstallCmds(location, domain, reportToken),
+    ...heartbeatInstallCmds(location, domain, reportToken),
     `uci -q delete opennds.@opennds[0].walledgarden_fqdn_list`,
     `uci add_list opennds.@opennds[0].walledgarden_fqdn_list='${esc(domain)}'`,
     `uci -q delete opennds.@opennds[0].users_to_router`,
@@ -131,4 +191,4 @@ function buildOpenNDSCommandList(location, domain, sessionMinutes = 720, reportT
   ];
 }
 
-module.exports = { esc, binauthInstallCmds, authmonInstallCmds, sshAccessCmds, buildOpenNDSCommandList };
+module.exports = { esc, binauthInstallCmds, authmonInstallCmds, heartbeatInstallCmds, sshAccessCmds, buildOpenNDSCommandList };

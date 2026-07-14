@@ -17,10 +17,16 @@ function enrichSshError(err, router) {
   const msg = err?.message || String(err);
   const host = router?.ssh_host || "?";
   const port = router?.ssh_port || 22;
-  if (/handshake|timed out|ETIMEDOUT|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH/i.test(msg)) {
+  if (/ECONNREFUSED/i.test(msg)) {
     return new Error(
-      `${msg} — Không SSH được ${host}:${port}. ` +
-      "VPS cần Tailscale (tag:portal) hoặc dùng lệnh Pull trên router trong Admin → Router."
+      `connect ECONNREFUSED ${host}:${port} — Router chưa mở SSH trên Tailscale. ` +
+      "Chạy lệnh Pull config trên router (Admin → Router), đợi 2 phút rồi Làm mới. " +
+      "Trạng thái vẫn hiện qua heartbeat sau khi pull."
+    );
+  }
+  if (/handshake|timed out|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH/i.test(msg)) {
+    return new Error(
+      `${msg} — Không SSH được ${host}:${port}. Kiểm tra Tailscale trên VPS/router hoặc dùng Pull trên router.`
     );
   }
   return err instanceof Error ? err : new Error(msg);

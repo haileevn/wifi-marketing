@@ -224,17 +224,32 @@ async function refreshStatus() {
   const box = document.getElementById('statusBox');
   box.innerHTML = 'Đang tải...';
   const res = await fetch(`/admin/router/${LOC_ID}/status`).then(r=>r.json());
-  if (!res.ok) { box.innerHTML = `<span class="status-badge status-bad">Lỗi: ${res.error}</span>`; return; }
+  if (!res.ok && !res.source) {
+    box.innerHTML = `<span class="status-badge status-bad">Lỗi: ${res.error}</span>
+      <p style="font-size:12px;color:#b45309;margin-top:8px">→ Chạy lệnh <b>Pull config</b> trên router (mục phía trên), đợi 2 phút, bấm Làm mới.</p>`;
+    return;
+  }
+  const via = res.source === 'heartbeat'
+    ? `<span style="font-size:11px;color:#64748b;margin-left:6px">(heartbeat${res.stale?' · cũ':''})</span>`
+    : '';
+  const sshWarn = res.ssh_error
+    ? `<p style="font-size:11px;color:#b45309;margin-top:8px">SSH: ${res.ssh_error.split('—')[0]} — dùng Pull config để mở port 22.</p>`
+    : '';
+  const sshBadge = res.ssh_listening === false
+    ? `<span class="status-badge status-bad" style="margin-left:6px">SSH:22 đóng</span>`
+    : (res.ssh_listening ? `<span class="status-badge status-ok" style="margin-left:6px">SSH:22 mở</span>` : '');
   box.innerHTML = `
     <span class="status-badge ${res.opennds_running?'status-ok':'status-bad'}">
       <span class="dot ${res.opennds_running?'dot-ok':'dot-bad'}"></span>
       OpenNDS ${res.opennds_running?'đang chạy':'không chạy'}
-    </span>
+    </span>${via}${sshBadge}
     <div class="stat-grid">
       <div class="stat"><b>${res.client_count}</b><span>Khách online</span></div>
       <div class="stat"><b style="font-size:12px">${res.model||'—'}</b><span>Model</span></div>
       <div class="stat"><b style="font-size:11px">${(res.uptime||'').split(',')[0]||'—'}</b><span>Uptime</span></div>
-    </div>`;
+    </div>
+    ${res.ts_ip ? `<p style="font-size:11px;color:#64748b;margin-top:8px">Tailscale: <code>${res.ts_ip}</code> · Cập nhật: ${res.last_seen||'—'}</p>` : ''}
+    ${sshWarn}`;
 }
 
 async function pushConfig() {

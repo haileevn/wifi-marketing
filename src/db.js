@@ -608,6 +608,35 @@ module.exports = {
   updateRouterStatus(id, statusJson) {
     db.prepare("UPDATE routers SET last_status=?, last_seen=datetime('now','localtime') WHERE id=?").run(statusJson, id);
   },
+  getRouterCachedStatus(routerId) {
+    const r = db.prepare("SELECT last_status, last_seen FROM routers WHERE id=?").get(routerId);
+    if (!r?.last_status) return null;
+    try {
+      const data = JSON.parse(r.last_status);
+      return { ...data, last_seen: r.last_seen };
+    } catch {
+      return null;
+    }
+  },
+  updateRouterHeartbeat(locationId, payload) {
+    const router = db.prepare("SELECT id FROM routers WHERE location_id=?").get(locationId);
+    if (!router) return false;
+    const json = JSON.stringify({ ...payload, source: "heartbeat", ok: true });
+    db.prepare("UPDATE routers SET last_status=?, last_seen=datetime('now','localtime') WHERE id=?")
+      .run(json, router.id);
+    if (payload.ts_ip) {
+      db.prepare("UPDATE routers SET ssh_host=?, last_seen=datetime('now','localtime') WHERE location_id=?")
+        .run(payload.ts_ip, locationId);
+    }
+    if (payload.firmware_version) {
+      db.prepare("UPDATE routers SET firmware_version=? WHERE location_id=?")
+        .run(payload.firmware_version, locationId);
+    }
+    if (payload.model) {
+      db.prepare("UPDATE routers SET model=? WHERE location_id=?").run(payload.model, locationId);
+    }
+    return true;
+  },
   listRoutersWithLocation() {
     return db.prepare(`
       SELECT r.*, l.display_name, l.gateway_name FROM routers r
