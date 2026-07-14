@@ -52,9 +52,16 @@ function buildInstallScript({ location, domain, token, pubkey, tailscaleAuthKey,
 set -e
 echo "=== Bắt đầu cài đặt cho quán: ${location.display_name} ==="
 
-# ---- 1) Cài OpenNDS ----
-echo "[1/6] Cài OpenNDS..."
+# ---- 1) Cài OpenNDS + dnsmasq-full ----
+echo "[1/6] Cài OpenNDS + dnsmasq-full..."
 opkg update >/dev/null 2>&1 || true
+if ! opkg list-installed 2>/dev/null | grep -q '^dnsmasq-full '; then
+  /etc/init.d/dnsmasq stop 2>/dev/null || true
+  opkg remove dnsmasq --force-depends 2>/dev/null || true
+  opkg install dnsmasq-full || true
+  /etc/init.d/dnsmasq enable 2>/dev/null || true
+  /etc/init.d/dnsmasq start 2>/dev/null || true
+fi
 opkg list-installed 2>/dev/null | grep -q '^opennds ' || opkg install opennds ca-bundle
 
 # ---- 2) Cấu hình OpenNDS trỏ về portal ----
@@ -68,10 +75,16 @@ uci set opennds.@opennds[0].fasport='443'
 uci set opennds.@opennds[0].faspath='/fas'
 uci set opennds.@opennds[0].faskey='${location.faskey}'
 uci set opennds.@opennds[0].fasssl='1'
+uci set opennds.@opennds[0].sessiontimeout='720'
 uci -q delete opennds.@opennds[0].binauth || true
 uci -q delete opennds.@opennds[0].walledgarden_fqdn_list
 uci add_list opennds.@opennds[0].walledgarden_fqdn_list='${domain}'
-uci set opennds.@opennds[0].sessiontimeout='720'
+uci -q delete opennds.@opennds[0].users_to_router
+uci add_list opennds.@opennds[0].users_to_router='allow udp port 53'
+uci add_list opennds.@opennds[0].users_to_router='allow udp port 67'
+uci add_list opennds.@opennds[0].users_to_router='allow tcp port 22'
+uci add_list opennds.@opennds[0].users_to_router='allow tcp port 443'
+uci add_list opennds.@opennds[0].users_to_router='allow tcp port 80'
 uci commit opennds
 service opennds enable
 

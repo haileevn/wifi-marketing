@@ -42,6 +42,18 @@ function parseFasParam(b64) {
 function rhid(hid, key) { return crypto.createHash("sha256").update(hid+key).digest("hex"); }
 function validPhone(p)   { return /^(0|\+84)\d{9}$/.test((p||"").replace(/[\s.-]/g,"")); }
 function normPhone(p)    { const s=(p||"").replace(/[\s.-]/g,""); return s.startsWith("+84")?"0"+s.slice(3):s; }
+/** OpenNDS gw_address thường đã là "192.168.x.x:2050" — không cộng port lần 2. */
+function openNdsAuthUrl(gatewayaddress, gatewayport, tok, redir) {
+  let host = String(gatewayaddress || "").trim().replace(/\/$/, "");
+  // IPv4:port hoặc [IPv6]:port
+  const hasPort = /^(\[[0-9a-fA-F:]+\]|(\d{1,3}\.){3}\d{1,3}):\d+$/.test(host);
+  if (!hasPort && gatewayport) host = `${host}:${gatewayport}`;
+  const q = new URLSearchParams({
+    tok: String(tok || ""),
+    redir: redir || "http://google.com",
+  });
+  return `http://${host}/opennds_auth/?${q.toString()}`;
+}
 function adminAuth(req, res, next) {
   const [u,p] = Buffer.from((req.headers.authorization||"").split(" ")[1]||"","base64").toString().split(":");
   if (u===process.env.ADMIN_USER && p===process.env.ADMIN_PASS) return next();
@@ -72,8 +84,8 @@ app.post("/auth", (req, res) => {
   const cid = store.upsertCustomer(ph, (name||"").trim().slice(0,60), loc.id);
   const cnt = store.logVisit(cid, loc.id, clientmac, clientip);
   zalo.onVisit({ customerId:cid, phone:ph, name:(name||"").trim(), locationName:loc.display_name, visitCount:cnt }).catch(()=>{});
-  const authUrl = `http://${gatewayaddress}:${gatewayport}/opennds_auth/?tok=${rhid(hid,loc.faskey)}&redir=${encodeURIComponent(originurl||"http://google.com")}`;
-  res.render("success",{ location:loc, authUrl });
+  const authUrl = openNdsAuthUrl(gatewayaddress, gatewayport, rhid(hid, loc.faskey), originurl);
+  res.render("success",{ location:loc, authUrl, clientip: clientip||"", gatewayaddress });
 });
 
 /* ── Preview standalone (không cần FAS) ─────────────────────── */

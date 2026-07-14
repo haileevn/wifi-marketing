@@ -63,6 +63,10 @@
   </form>
 
   <p class="hint">Sau khi bấm, cửa sổ WiFi có thể tự đóng — vậy là đúng. Thử mở Safari/Chrome xem trang web bất kỳ.</p>
+  <% if (typeof gatewayaddress !== 'undefined' && gatewayaddress) { %>
+  <p class="hint" style="opacity:.7;word-break:break-all">Auth: <%= String(authUrl).replace(/\?.*/, '') %></p>
+  <% } %>
+
 
   <div class="btn-row">
     <% if (location.menu_enabled) { %>

@@ -56,24 +56,35 @@ async function testConnection(router) {
 // domain: domain portal (vd wifi.06.com.vn), phải chạy plain HTTP path /fas /auth (xem README)
 async function pushOpenNDSConfig(router, location, domain, sessionMinutes = 720) {
   const cmds = [
-    "opkg list-installed | grep -q opennds || opkg update && opkg install opennds ca-bundle",
+    "opkg update >/dev/null 2>&1 || true",
+    // OpenWrt 23.05/nft: cần dnsmasq-full cho walled garden + ipset/nftset
+    "opkg list-installed | grep -q '^dnsmasq-full ' || (opkg remove dnsmasq --force-depends 2>/dev/null; opkg install dnsmasq-full)",
+    "opkg list-installed | grep -q opennds || opkg install opennds ca-bundle",
+    "opkg install iptables-nft ip6tables-nft kmod-tun 2>/dev/null || true",
     `uci set opennds.@opennds[0].enabled='1'`,
     `uci set opennds.@opennds[0].gatewayname='${esc(location.gateway_name)}'`,
     `uci set opennds.@opennds[0].gatewayinterface='br-lan'`,
     `uci set opennds.@opennds[0].fas_secure_enabled='1'`,
     `uci set opennds.@opennds[0].fasremotefqdn='${esc(domain)}'`,
+    // HTTPS portal (CloudPanel): fasport 443 + fasssl=1
     `uci set opennds.@opennds[0].fasport='443'`,
     `uci set opennds.@opennds[0].faspath='/fas'`,
     `uci set opennds.@opennds[0].faskey='${esc(location.faskey)}'`,
     `uci set opennds.@opennds[0].fasssl='1'`,
     `uci set opennds.@opennds[0].sessiontimeout='${Number(sessionMinutes)||720}'`,
+    // Binauth script lỗi thường chặn auth im lặng
     `uci -q delete opennds.@opennds[0].binauth || true`,
     `uci -q delete opennds.@opennds[0].walledgarden_fqdn_list`,
     `uci add_list opennds.@opennds[0].walledgarden_fqdn_list='${esc(domain)}'`,
+    `uci -q delete opennds.@opennds[0].users_to_router`,
+    `uci add_list opennds.@opennds[0].users_to_router='allow udp port 53'`,
+    `uci add_list opennds.@opennds[0].users_to_router='allow udp port 67'`,
+    `uci add_list opennds.@opennds[0].users_to_router='allow tcp port 22'`,
+    `uci add_list opennds.@opennds[0].users_to_router='allow tcp port 443'`,
+    `uci add_list opennds.@opennds[0].users_to_router='allow tcp port 80'`,
     `uci commit opennds`,
-    `service opennds stop`,
-    `sleep 2`,
-    `service opennds start`,
+    `/etc/init.d/dnsmasq restart || true`,
+    `service opennds stop; sleep 2; service opennds start`,
   ];
   const ssh = await connect(router);
   try {
