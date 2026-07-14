@@ -55,7 +55,8 @@ app.get("/fas", (req, res) => {
   if (!p?.hid || !p?.gatewayname) return res.status(400).render("error",{message:"Thiếu thông tin từ router."});
   const loc = store.findLocationByGateway(p.gatewayname);
   if (!loc) return res.status(404).render("error",{message:`Chưa khai báo quán "${p.gatewayname}".`});
-  res.render("portal",{ location:loc, hid:p.hid, gatewayname:p.gatewayname,
+  // Luôn dùng gateway_name đã khai trên portal (tránh leak " Node:xxx" vào form /auth)
+  res.render("portal",{ location:loc, hid:p.hid, gatewayname:loc.gateway_name,
     gatewayaddress:p.gatewayaddress||"", gatewayport:p.gatewayport||"2050",
     clientmac:p.clientmac||"", clientip:p.clientip||"",
     originurl:p.originurl||"http://google.com", error:null });

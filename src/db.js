@@ -168,7 +168,18 @@ module.exports = {
   db,
 
   findLocationByGateway(gw) {
-    return db.prepare("SELECT * FROM locations WHERE gateway_name = ?").get(gw);
+    // OpenNDS FAS thường gửi: "comtam-72phl Node:aabbccddeeff" (và đôi khi còn URL-encoded)
+    let name = String(gw || "").trim();
+    try { name = decodeURIComponent(name.replace(/\+/g, " ")); } catch { /* keep */ }
+    name = name.trim();
+    // Bỏ suffix " Node:..." mà openNDS gắn thêm
+    const base = name.replace(/\s+Node:[0-9a-fA-F:.-]+\s*$/i, "").trim();
+    return (
+      db.prepare("SELECT * FROM locations WHERE gateway_name = ?").get(base) ||
+      db.prepare("SELECT * FROM locations WHERE gateway_name = ?").get(name) ||
+      // fallback: prefix match nếu người dùng đổi tên nhưng openNDS cũ còn sót
+      db.prepare("SELECT * FROM locations WHERE ? LIKE gateway_name || '%' ORDER BY length(gateway_name) DESC LIMIT 1").get(base)
+    );
   },
 
   findLocationById(id) {
