@@ -12,8 +12,8 @@ set -euo pipefail
 
 HOST="${DEPLOY_HOST:-${1:-}}"
 USER_NAME="${DEPLOY_USER:-h2t}"
-PORT="${DEPLOY_PORT:-22155}"
-KEY="${DEPLOY_KEY:-$HOME/.ssh/luong_h2t_ed25519}"
+PORT="${DEPLOY_PORT:-22160}"
+KEY="${DEPLOY_KEY:-.deploy/id_ed25519_wifi}"
 REMOTE_PATH="${DEPLOY_PATH:-/opt/wifi-marketing}"
 BRANCH="${DEPLOY_BRANCH:-main}"
 PM2_NAME="${PM2_NAME:-wifi-portal}"

@@ -3,9 +3,9 @@
 # Cài pubkey deploy (không passphrase) + clone/pull portal + PM2.
 #
 # Từ máy local (sau khi SSH thủ công vào VPS):
-#   scp -P 22155 scripts/bootstrap-on-vps.sh h2t@14.161.29.98:/tmp/
-#   scp -P 22155 .deploy/id_ed25519_wifi.pub h2t@14.161.29.98:/tmp/wifi-deploy.pub
-#   ssh -p 22155 h2t@14.161.29.98 'bash /tmp/bootstrap-on-vps.sh /tmp/wifi-deploy.pub'
+#   scp -P 22160 scripts/bootstrap-on-vps.sh h2t@14.161.29.98:/tmp/
+#   scp -P 22160 .deploy/id_ed25519_wifi.pub h2t@14.161.29.98:/tmp/wifi-deploy.pub
+#   ssh -p 22160 h2t@14.161.29.98 'bash /tmp/bootstrap-on-vps.sh /tmp/wifi-deploy.pub'
 set -euo pipefail
 
 PUBKEY_FILE="${1:-/tmp/wifi-deploy.pub}"
@@ -42,4 +42,4 @@ pm2 save
 curl -fsS "http://127.0.0.1:${PORT:-20140}/health" || true
 echo
 echo "Bootstrap done. From laptop (no passphrase):"
-echo "  DEPLOY_HOST=14.161.29.98 DEPLOY_USER=$(whoami) DEPLOY_PORT=22155 DEPLOY_KEY=.deploy/id_ed25519_wifi ./scripts/deploy.sh"
+echo "  DEPLOY_HOST=14.161.29.98 DEPLOY_USER=$(whoami) DEPLOY_PORT=22160 DEPLOY_KEY=.deploy/id_ed25519_wifi ./scripts/deploy.sh"

@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KEY="${DEPLOY_KEY:-$HOME/.ssh/luong_h2t_ed25519}"
 HOST="${DEPLOY_HOST:-14.161.29.98}"
 USER_NAME="${DEPLOY_USER:-h2t}"
-PORT="${DEPLOY_PORT:-22155}"
+PORT="${DEPLOY_PORT:-22160}"
 
 if [[ ! -f "$KEY" ]]; then
   echo "Không thấy key: $KEY"
