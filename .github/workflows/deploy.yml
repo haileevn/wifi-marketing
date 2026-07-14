@@ -31,10 +31,15 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR="${{ secrets.DEPLOY_PATH }}"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              sudo mkdir -p "$APP_DIR"
+              sudo chown -R "$(whoami)" "$APP_DIR"
+              git clone https://github.com/haileevn/wifi-marketing.git "$APP_DIR"
+            fi
             cd "$APP_DIR"
-            git fetch origin
-            git checkout main
-            git pull --ff-only origin main
+            git -c safe.directory="$APP_DIR" fetch origin
+            git -c safe.directory="$APP_DIR" checkout main
+            git -c safe.directory="$APP_DIR" pull --ff-only origin main
             npm install --omit=dev
             npm run release -- --changelog "CI deploy $(git rev-parse --short HEAD)"
             pm2 restart wifi-portal --update-env || pm2 start src/server.js --name wifi-portal

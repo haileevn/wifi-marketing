@@ -40,9 +40,9 @@ if [[ ! -d "\$APP/.git" ]]; then
   git clone https://github.com/haileevn/wifi-marketing.git "\$APP"
 fi
 cd "\$APP"
-git fetch origin
-git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+git -c safe.directory="\$APP" fetch origin
+git -c safe.directory="\$APP" checkout "$BRANCH"
+git -c safe.directory="\$APP" pull --ff-only origin "$BRANCH"
 npm install --omit=dev
 npm run release -- --changelog "Deploy \$(git rev-parse --short HEAD)"
 if [[ ! -f .env ]]; then
