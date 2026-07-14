@@ -64,10 +64,13 @@ uci set opennds.@opennds[0].gatewayname='${location.gateway_name}'
 uci set opennds.@opennds[0].gatewayinterface='br-lan'
 uci set opennds.@opennds[0].fas_secure_enabled='1'
 uci set opennds.@opennds[0].fasremotefqdn='${domain}'
-uci set opennds.@opennds[0].fasport='80'
+uci set opennds.@opennds[0].fasport='443'
 uci set opennds.@opennds[0].faspath='/fas'
 uci set opennds.@opennds[0].faskey='${location.faskey}'
-uci set opennds.@opennds[0].fasssl='0'
+uci set opennds.@opennds[0].fasssl='1'
+uci -q delete opennds.@opennds[0].binauth || true
+uci -q delete opennds.@opennds[0].walledgarden_fqdn_list
+uci add_list opennds.@opennds[0].walledgarden_fqdn_list='${domain}'
 uci set opennds.@opennds[0].sessiontimeout='720'
 uci commit opennds
 service opennds enable
