@@ -117,19 +117,39 @@ app.get("/fas", (req, res) => {
   res.render("portal",{ location:loc, hid:p.hid, gatewayname:loc.gateway_name,
     gatewayaddress:p.gatewayaddress||"", gatewayport:p.gatewayport||"2050",
     clientmac:p.clientmac||"", clientip:p.clientip||"",
-    originurl:p.originurl||"http://google.com", error:null });
+    originurl:p.originurl||"http://google.com", error:null,
+    surveyQuestions: loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [] });
 });
 
 app.post("/auth", (req, res) => {
   const { hid, gatewayname, gatewayaddress, gatewayport, clientmac, clientip, originurl, phone, name } = req.body;
   const loc = store.findLocationByGateway(gatewayname);
   if (!loc || !hid || !gatewayaddress) return res.status(400).render("error",{message:"Phiên không hợp lệ."});
+  const surveyQs = loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [];
   if (!validPhone(phone)) return res.render("portal",{ location:loc, hid, gatewayname, gatewayaddress, gatewayport,
-    clientmac, clientip, originurl, error:"Số điện thoại chưa đúng, bạn kiểm tra lại giúp mình nha!" });
+    clientmac, clientip, originurl, surveyQuestions: surveyQs,
+    error:"Số điện thoại chưa đúng, bạn kiểm tra lại giúp mình nha!" });
+  // Validate khảo sát bắt buộc
+  if (surveyQs.length) {
+    for (const q of surveyQs) {
+      if (!q.required) continue;
+      const ans = String(req.body[`survey_${q.id}`] || "").trim();
+      if (!ans) {
+        return res.render("portal",{ location:loc, hid, gatewayname, gatewayaddress, gatewayport,
+          clientmac, clientip, originurl, surveyQuestions: surveyQs,
+          error:`Vui lòng trả lời: ${q.question_text}` });
+      }
+    }
+  }
   const ph = normPhone(phone);
   const cid = store.upsertCustomer(ph, (name||"").trim().slice(0,60), loc.id);
-  const cnt = store.logVisit(cid, loc.id, clientmac, clientip);
-  zalo.onVisit({ customerId:cid, phone:ph, name:(name||"").trim(), locationName:loc.display_name, visitCount:cnt }).catch(()=>{});
+  const visit = store.logVisit(cid, loc.id, clientmac, clientip);
+  if (surveyQs.length) {
+    const answers = {};
+    for (const q of surveyQs) answers[q.id] = req.body[`survey_${q.id}`];
+    store.saveSurveyAnswers({ visitId: visit.visitId, customerId: cid, locationId: loc.id, answers });
+  }
+  zalo.onVisit({ customerId:cid, phone:ph, name:(name||"").trim(), locationName:loc.display_name, visitCount:visit.count }).catch(()=>{});
   const redir = resolvePostAuthRedirect(loc, originurl);
   const authUrl = openNdsAuthUrl(gatewayaddress, gatewayport, rhid(hid, loc.faskey), redir);
   res.render("success",{ location:loc, authUrl, redir, clientip: clientip||"", gatewayaddress });
@@ -148,7 +168,8 @@ app.get("/preview/:id", (req, res) => {
   if (!loc) return res.status(404).render("error",{message:"Không tìm thấy quán."});
   res.render("portal",{ location:loc, hid:"preview", gatewayname:loc.gateway_name,
     gatewayaddress:"127.0.0.1", gatewayport:"2050", clientmac:"", clientip:"",
-    originurl:"http://google.com", error:null });
+    originurl:"http://google.com", error:null,
+    surveyQuestions: loc.survey_enabled ? store.listActiveSurveyQuestions(loc.id) : [] });
 });
 
 /* ── Admin ───────────────────────────────────────────────────── */
@@ -187,6 +208,9 @@ app.post("/admin/editor/:id", adminAuth, (req, res) => {
     promo_text:   (b.promo_text||"").trim().slice(0,300),
     zalo_link:    (b.zalo_link||"").trim(),
     success_redirect: (b.success_redirect||"").trim().slice(0,500),
+    google_review_url: (b.google_review_url||"").trim().slice(0,500),
+    survey_enabled: b.survey_enabled==="1"?1:0,
+    survey_title: (b.survey_title||"Khảo sát nhanh").trim().slice(0,80),
     accent_color: b.accent_color||"#B4452C",
     logo_data:    (b.logo_data||"").slice(0, 500000), // max ~375KB ảnh
     bg_color:     b.bg_color||"#FFF6EC",
@@ -207,6 +231,96 @@ app.get("/admin/export.csv", adminAuth, (req, res) => {
   const body = rows.map(r=>[r.phone,`"${(r.name||"").replace(/"/g,'""')}"`,`"${r.quan_dau_tien||""}"`,r.created_at,r.so_lan_ghe].join(",")).join("\n");
   res.set("Content-Type","text/csv; charset=utf-8").set("Content-Disposition","attachment; filename=khach-hang.csv");
   res.send("\uFEFF"+"phone,name,quan_dau_tien,ngay_dang_ky,so_lan_ghe\n"+body);
+});
+
+/* ── Admin: Khách & phiên WiFi ───────────────────────────────── */
+app.get("/admin/guests", adminAuth, async (req, res) => {
+  const locId = req.query.location ? Number(req.query.location) : null;
+  const groups = store.listGuestGroups({ locationId: locId, limit: 200 });
+  const onlineMap = {};
+  for (const loc of store.listLocations()) {
+    const router = store.findRouterByLocation(loc.id);
+    if (!router?.ssh_host) continue;
+    try {
+      const clients = await routerCtl.listClients(router);
+      onlineMap[loc.id] = clients
+        .filter(c => /auth|pre/i.test(c.state || ""))
+        .map(c => String(c.mac || "").toLowerCase());
+    } catch { onlineMap[loc.id] = []; }
+  }
+  for (const g of groups) {
+    const macs = onlineMap[g.location_id] || [];
+    g.is_online = !!(g.last_mac && macs.includes(String(g.last_mac).toLowerCase()) && g.active_count > 0);
+  }
+  res.render("guests", {
+    groups, locations: store.listLocations(),
+    filterLocation: locId, saved: req.query.saved === "1",
+  });
+});
+
+app.get("/admin/guests/detail", adminAuth, (req, res) => {
+  const customerId = Number(req.query.customer_id);
+  const locationId = Number(req.query.location_id);
+  const detail = store.getGuestDetail(customerId, locationId);
+  if (!detail) return res.status(404).json({ ok: false, error: "Không tìm thấy khách." });
+  res.json({ ok: true, ...detail });
+});
+
+app.post("/admin/guests/disconnect", adminAuth, async (req, res) => {
+  const locationId = Number(req.body.location_id);
+  const mac = String(req.body.mac || "").trim();
+  const customerId = Number(req.body.customer_id) || null;
+  if (!locationId || !mac) return res.json({ ok: false, error: "Thiếu location_id hoặc MAC." });
+  const router = store.findRouterByLocation(locationId);
+  if (!router?.ssh_host) return res.json({ ok: false, error: "Router chưa kết nối SSH." });
+  try {
+    await routerCtl.disconnectClient(router, mac);
+    store.endVisitsByMac(locationId, mac);
+    res.json({ ok: true, customer_id: customerId });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+/* ── Admin: Khảo sát Q&A ─────────────────────────────────────── */
+app.get("/admin/survey/:id", adminAuth, (req, res) => {
+  const loc = store.findLocationById(req.params.id);
+  if (!loc) return res.redirect("/admin");
+  res.render("survey-admin", {
+    location: loc,
+    questions: store.listSurveyQuestions(loc.id),
+    saved: req.query.saved === "1",
+  });
+});
+
+app.post("/admin/survey/:id/settings", adminAuth, (req, res) => {
+  store.setSurveyEnabled(req.params.id, req.body.enabled === "1", req.body.survey_title);
+  res.redirect(`/admin/survey/${req.params.id}?saved=1`);
+});
+
+app.post("/admin/survey/:id/add", adminAuth, (req, res) => {
+  const text = (req.body.question_text || "").trim();
+  if (text) {
+    const opts = (req.body.options || "").split("\n").map(s => s.trim()).filter(Boolean);
+    store.addSurveyQuestion(req.params.id, {
+      question_text: text.slice(0, 200),
+      question_type: req.body.question_type || "text",
+      options: opts,
+      required: req.body.required === "1",
+      sort_order: Number(req.body.sort_order) || 0,
+    });
+  }
+  res.redirect(`/admin/survey/${req.params.id}?saved=1`);
+});
+
+app.post("/admin/survey/:id/:qid/toggle", adminAuth, (req, res) => {
+  store.toggleSurveyQuestion(req.params.qid);
+  res.redirect(`/admin/survey/${req.params.id}?saved=1`);
+});
+
+app.post("/admin/survey/:id/:qid/delete", adminAuth, (req, res) => {
+  store.deleteSurveyQuestion(req.params.qid);
+  res.redirect(`/admin/survey/${req.params.id}?saved=1`);
 });
 
 /* ── Menu công khai (khách xem sau khi kết nối WiFi) ────────────── */
@@ -334,6 +448,7 @@ app.post("/admin/router/:id/disconnect", adminAuth, async (req, res) => {
   if (!router) return res.json({ ok:false, error:"Chưa cấu hình router." });
   try {
     const out = await routerCtl.disconnectClient(router, req.body.mac);
+    store.endVisitsByMac(Number(req.params.id), req.body.mac);
     res.json({ ok:true, out });
   } catch (e) {
     res.json({ ok:false, error: e.message });

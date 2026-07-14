@@ -200,6 +200,16 @@ a{color:inherit;text-decoration:none}
         <input type="url" name="zalo_link" id="f_zalo_link" value="<%= location.zalo_link||'' %>" oninput="refresh()">
         <small>Fallback: Zalo → Menu (nếu bật) → trang chào portal.</small>
       </div>
+      <div class="field">
+        <label>Link đánh giá Google Business</label>
+        <input type="url" name="google_review_url" id="f_google_review_url"
+          value="<%= location.google_review_url||'' %>"
+          placeholder="https://g.page/r/.../review">
+        <small>Hiển thị nút ⭐ trên Menu và trang chào sau WiFi.</small>
+      </div>
+      <p style="font-size:12px;margin-top:10px">
+        <a href="/admin/survey/<%= location.id %>" style="color:#7C3AED;font-weight:700">📋 Quản lý khảo sát Q&A →</a>
+      </p>
     </div>
 
     <!-- Tab: Colors -->

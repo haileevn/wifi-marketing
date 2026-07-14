@@ -128,12 +128,58 @@ const newCols = [
   ["enroll_token", "TEXT DEFAULT ''"],
   // URL absolute sau khi OpenNDS auth xong (tránh originurl CPD = IP gateway → 404)
   ["success_redirect", "TEXT DEFAULT ''"],
+  ["google_review_url", "TEXT DEFAULT ''"],
+  ["survey_enabled", "INTEGER DEFAULT 0"],
+  ["survey_title", "TEXT DEFAULT 'Khảo sát nhanh'"],
 ];
 for (const [col, def] of newCols) {
   if (!existingCols.includes(col)) {
     db.exec(`ALTER TABLE locations ADD COLUMN ${col} ${def}`);
   }
 }
+
+// Migration visits: thời gian ra + trạng thái phiên
+const visitCols = db.prepare("PRAGMA table_info(visits)").all().map(c => c.name);
+const visitNewCols = [
+  ["ended_at", "TEXT DEFAULT NULL"],
+  ["status", "TEXT DEFAULT 'active'"],
+];
+for (const [col, def] of visitNewCols) {
+  if (!visitCols.includes(col)) {
+    db.exec(`ALTER TABLE visits ADD COLUMN ${col} ${def}`);
+  }
+}
+
+// Khảo sát Q&A theo quán
+db.exec(`
+CREATE TABLE IF NOT EXISTS survey_questions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  location_id   INTEGER NOT NULL,
+  question_text TEXT NOT NULL,
+  question_type TEXT DEFAULT 'text',
+  options       TEXT DEFAULT '[]',
+  required      INTEGER DEFAULT 0,
+  sort_order    INTEGER DEFAULT 0,
+  active        INTEGER DEFAULT 1,
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (location_id) REFERENCES locations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_survey_q_loc ON survey_questions(location_id, sort_order);
+CREATE TABLE IF NOT EXISTS survey_answers (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  visit_id      INTEGER NOT NULL,
+  customer_id   INTEGER NOT NULL,
+  location_id   INTEGER NOT NULL,
+  question_id   INTEGER NOT NULL,
+  answer_text   TEXT DEFAULT '',
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (visit_id) REFERENCES visits(id),
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (location_id) REFERENCES locations(id),
+  FOREIGN KEY (question_id) REFERENCES survey_questions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_survey_ans_visit ON survey_answers(visit_id);
+`);
 
 // Migration cho bảng routers: hỗ trợ SSH key thay vì chỉ mật khẩu
 const routerCols = db.prepare("PRAGMA table_info(routers)").all().map(c => c.name);
@@ -209,7 +255,9 @@ module.exports = {
       card_color=@card_color, text_color=@text_color, headline=@headline,
       btn_text=@btn_text, show_name=@show_name, require_name=@require_name,
       custom_css=@custom_css, template_id=@template_id,
-      success_redirect=@success_redirect
+      custom_css=@custom_css, template_id=@template_id,
+      success_redirect=@success_redirect,
+      google_review_url=@google_review_url, survey_enabled=@survey_enabled, survey_title=@survey_title
     WHERE id=@id`).run({ id, ...d });
   },
 
@@ -219,12 +267,140 @@ module.exports = {
       if (name && !ex.name) db.prepare("UPDATE customers SET name=? WHERE id=?").run(name, ex.id);
       return ex.id;
     }
-    return db.prepare("INSERT INTO customers (phone,name,first_location_id) VALUES (?,?,?)").run(phone, name||"", locationId).lastInsertRowid;
+    return db.prepare("INSERT INTO customers (phone,name,first_location_id) VALUES (?,?,?)")
+      .run(phone, name || "", locationId).lastInsertRowid;
   },
 
+  /** Ghi nhận phiên vào — gộp nếu cùng khách+quán+MAC còn active trong X phút */
   logVisit(customerId, locationId, mac, ip) {
-    db.prepare("INSERT INTO visits (customer_id,location_id,client_mac,client_ip) VALUES (?,?,?,?)").run(customerId, locationId, mac||"", ip||"");
-    return db.prepare("SELECT COUNT(*) AS n FROM visits WHERE customer_id=?").get(customerId).n;
+    const mergeMin = Number(process.env.VISIT_MERGE_MINUTES || 30);
+    const macNorm = String(mac || "").toLowerCase();
+    const active = db.prepare(`
+      SELECT id FROM visits
+      WHERE customer_id=? AND location_id=? AND lower(client_mac)=?
+        AND ended_at IS NULL AND status='active'
+        AND datetime(created_at) > datetime('now', '-' || ? || ' minutes', 'localtime')
+      ORDER BY id DESC LIMIT 1
+    `).get(customerId, locationId, macNorm, mergeMin);
+    if (active) {
+      db.prepare("UPDATE visits SET client_ip=? WHERE id=?").run(ip || "", active.id);
+      const n = db.prepare("SELECT COUNT(*) AS n FROM visits WHERE customer_id=?").get(customerId).n;
+      return { visitId: active.id, merged: true, count: n };
+    }
+    const visitId = db.prepare(
+      "INSERT INTO visits (customer_id,location_id,client_mac,client_ip,status) VALUES (?,?,?,?,'active')"
+    ).run(customerId, locationId, macNorm, ip || "").lastInsertRowid;
+    const n = db.prepare("SELECT COUNT(*) AS n FROM visits WHERE customer_id=?").get(customerId).n;
+    return { visitId, merged: false, count: n };
+  },
+
+  endVisitsByMac(locationId, mac) {
+    const m = String(mac || "").toLowerCase();
+    return db.prepare(`
+      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
+      WHERE location_id=? AND lower(client_mac)=? AND ended_at IS NULL
+    `).run(locationId, m).changes;
+  },
+
+  endVisitById(visitId) {
+    return db.prepare(`
+      UPDATE visits SET ended_at=datetime('now','localtime'), status='ended'
+      WHERE id=? AND ended_at IS NULL
+    `).run(visitId).changes;
+  },
+
+  listGuestGroups({ locationId = null, limit = 100 } = {}) {
+    const where = locationId ? "WHERE l.id = ?" : "";
+    const params = locationId ? [locationId, limit] : [limit];
+    return db.prepare(`
+      SELECT c.id AS customer_id, c.phone, c.name, l.id AS location_id, l.display_name,
+        COUNT(v.id) AS visit_count,
+        MIN(v.created_at) AS first_in,
+        MAX(COALESCE(v.ended_at, v.created_at)) AS last_out,
+        SUM(CASE WHEN v.ended_at IS NULL AND v.status='active' THEN 1 ELSE 0 END) AS active_count,
+        (SELECT client_mac FROM visits v2 WHERE v2.customer_id=c.id AND v2.location_id=l.id ORDER BY v2.id DESC LIMIT 1) AS last_mac,
+        (SELECT client_ip FROM visits v2 WHERE v2.customer_id=c.id AND v2.location_id=l.id ORDER BY v2.id DESC LIMIT 1) AS last_ip
+      FROM visits v
+      JOIN customers c ON c.id=v.customer_id
+      JOIN locations l ON l.id=v.location_id
+      ${where}
+      GROUP BY c.id, l.id
+      ORDER BY last_out DESC
+      LIMIT ?
+    `).all(...params);
+  },
+
+  getGuestDetail(customerId, locationId) {
+    const customer = db.prepare("SELECT * FROM customers WHERE id=?").get(customerId);
+    const location = db.prepare("SELECT id, display_name, gateway_name FROM locations WHERE id=?").get(locationId);
+    if (!customer || !location) return null;
+    const sessions = db.prepare(`
+      SELECT v.id, v.created_at, v.ended_at, v.status, v.client_mac, v.client_ip,
+        CASE WHEN v.ended_at IS NOT NULL
+          THEN CAST((julianday(v.ended_at) - julianday(v.created_at)) * 24 * 60 AS INTEGER)
+          ELSE NULL END AS duration_min
+      FROM visits v
+      WHERE v.customer_id=? AND v.location_id=?
+      ORDER BY v.id DESC
+    `).all(customerId, locationId);
+    const answers = db.prepare(`
+      SELECT sq.question_text, sq.question_type, sa.answer_text, sa.created_at
+      FROM survey_answers sa
+      JOIN survey_questions sq ON sq.id=sa.question_id
+      WHERE sa.customer_id=? AND sa.location_id=?
+      ORDER BY sa.id DESC
+    `).all(customerId, locationId);
+    const totalVisits = db.prepare(
+      "SELECT COUNT(*) AS n FROM visits WHERE customer_id=? AND location_id=?"
+    ).get(customerId, locationId).n;
+    return { customer, location, sessions, answers, totalVisits };
+  },
+
+  listSurveyQuestions(locationId) {
+    return db.prepare(
+      "SELECT * FROM survey_questions WHERE location_id=? ORDER BY sort_order, id"
+    ).all(locationId);
+  },
+
+  listActiveSurveyQuestions(locationId) {
+    return db.prepare(
+      "SELECT * FROM survey_questions WHERE location_id=? AND active=1 ORDER BY sort_order, id"
+    ).all(locationId);
+  },
+
+  addSurveyQuestion(locationId, q) {
+    const opts = Array.isArray(q.options) ? JSON.stringify(q.options) : (q.options || "[]");
+    return db.prepare(`
+      INSERT INTO survey_questions (location_id, question_text, question_type, options, required, sort_order, active)
+      VALUES (?,?,?,?,?,?,1)
+    `).run(locationId, q.question_text, q.question_type || "text", opts,
+      q.required ? 1 : 0, q.sort_order || 0);
+  },
+
+  deleteSurveyQuestion(id) {
+    db.prepare("DELETE FROM survey_answers WHERE question_id=?").run(id);
+    db.prepare("DELETE FROM survey_questions WHERE id=?").run(id);
+  },
+
+  toggleSurveyQuestion(id) {
+    db.prepare("UPDATE survey_questions SET active = 1 - active WHERE id=?").run(id);
+  },
+
+  setSurveyEnabled(locationId, enabled, title) {
+    db.prepare("UPDATE locations SET survey_enabled=?, survey_title=COALESCE(?, survey_title) WHERE id=?")
+      .run(enabled ? 1 : 0, title || null, locationId);
+  },
+
+  saveSurveyAnswers({ visitId, customerId, locationId, answers }) {
+    const ins = db.prepare(`
+      INSERT INTO survey_answers (visit_id, customer_id, location_id, question_id, answer_text)
+      VALUES (?,?,?,?,?)
+    `);
+    for (const [qid, text] of Object.entries(answers || {})) {
+      const t = String(text || "").trim().slice(0, 500);
+      if (!t) continue;
+      ins.run(visitId, customerId, locationId, Number(qid), t);
+    }
   },
 
   stats() {

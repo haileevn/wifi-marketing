@@ -50,7 +50,10 @@
     <% if (location.menu_enabled) { %>
       <a class="btn btn-ghost" href="/menu/<%= location.id %>">Xem Menu</a>
     <% } %>
-    <% if (!location.zalo_link && !location.menu_enabled) { %>
+    <% if (location.google_review_url) { %>
+      <a class="btn btn-primary" href="<%= location.google_review_url %>" target="_blank" rel="noopener">⭐ Đánh giá Google</a>
+    <% } %>
+    <% if (!location.zalo_link && !location.menu_enabled && !location.google_review_url) { %>
       <a class="btn btn-primary" href="https://www.google.com/">Mở trình duyệt</a>
     <% } %>
   </div>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Khảo sát — <%= location.display_name %></title>
+<style>
+:root{--ink:#1a202c;--paper:#f7f8fa;--accent:#7C3AED;--line:#e2e8f0}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);padding:24px 20px 60px}
+.wrap{max-width:720px;margin:0 auto}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.back{width:34px;height:34px;border-radius:9px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-decoration:none}
+h1{font-size:20px;font-weight:800}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h2{font-size:15px;font-weight:700;margin-bottom:12px}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px}
+.field input,.field textarea,.field select{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+.btn{padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+.q-item{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;font-size:13px}
+.q-item.inactive{opacity:.45}
+.saved{background:#d1fae5;color:#065f46;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:12px}
+.toggle{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <a class="back" href="/admin">←</a>
+    <h1>📋 Khảo sát — <%= location.display_name %></h1>
+  </div>
+  <% if (saved) { %><div class="saved">✓ Đã lưu</div><% } %>
+
+  <div class="card">
+    <h2>Cài đặt</h2>
+    <form method="POST" action="/admin/survey/<%= location.id %>/settings">
+      <div class="toggle">
+        <label><input type="checkbox" name="enabled" value="1" <%= location.survey_enabled?'checked':'' %>> Bật khảo sát trên portal WiFi</label>
+      </div>
+      <div class="field">
+        <label>Tiêu đề khối khảo sát</label>
+        <input name="survey_title" value="<%= location.survey_title||'Khảo sát nhanh' %>">
+      </div>
+      <button class="btn" type="submit">Lưu cài đặt</button>
+    </form>
+    <p style="font-size:12px;color:#64748b;margin-top:10px">Khách thấy câu hỏi ngay trên form đăng nhập WiFi (sau SĐT).</p>
+  </div>
+
+  <div class="card">
+    <h2>Thêm câu hỏi</h2>
+    <form method="POST" action="/admin/survey/<%= location.id %>/add">
+      <div class="field">
+        <label>Nội dung câu hỏi</label>
+        <input name="question_text" required placeholder="Bạn biết quán qua kênh nào?">
+      </div>
+      <div class="field">
+        <label>Loại</label>
+        <select name="question_type">
+          <option value="text">Ô nhập text</option>
+          <option value="select">Chọn 1 (dropdown)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Tùy chọn (mỗi dòng 1 lựa chọn — chỉ dùng cho dropdown)</label>
+        <textarea name="options" rows="3" placeholder="Facebook&#10;Google Maps&#10;Bạn bè giới thiệu"></textarea>
+      </div>
+      <div class="toggle">
+        <label><input type="checkbox" name="required" value="1"> Bắt buộc trả lời</label>
+      </div>
+      <button class="btn" type="submit">+ Thêm câu hỏi</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Danh sách (<%= questions.length %>)</h2>
+    <% if (!questions.length) { %>
+      <p style="color:#94a3b8;font-size:13px">Chưa có câu hỏi.</p>
+    <% } %>
+    <% questions.forEach(q => {
+      let opts = [];
+      try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
+    %>
+    <div class="q-item <%= q.active?'':'inactive' %>">
+      <b><%= q.question_text %></b>
+      <span style="color:#64748b;font-size:11px"> · <%= q.question_type %><%= q.required?' · bắt buộc':'' %></span>
+      <% if (opts.length) { %><div style="font-size:11px;color:#64748b;margin-top:4px"><%= opts.join(' · ') %></div><% } %>
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <form method="POST" action="/admin/survey/<%= location.id %>/<%= q.id %>/toggle" style="display:inline">
+          <button class="btn btn-outline" style="padding:4px 10px;font-size:11px" type="submit"><%= q.active?'Ẩn':'Bật' %></button>
+        </form>
+        <form method="POST" action="/admin/survey/<%= location.id %>/<%= q.id %>/delete" style="display:inline" onsubmit="return confirm('Xóa câu hỏi?')">
+          <button class="btn" style="padding:4px 10px;font-size:11px;background:#EF4444" type="submit">Xóa</button>
+        </form>
+      </div>
+    </div>
+    <% }) %>
+  </div>
+</div>
+</body>
+</html>

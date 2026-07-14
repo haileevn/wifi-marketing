@@ -26,6 +26,11 @@ main{padding:8px 16px 40px;max-width:600px;margin:0 auto}
 .unavailable{opacity:.4}
 .badge-out{font-size:10px;background:#EF4444;color:#fff;padding:2px 6px;border-radius:6px;margin-left:6px;vertical-align:middle}
 .empty{text-align:center;padding:60px 20px;color:#8A7A66}
+.cta-bar{position:fixed;bottom:0;left:0;right:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid rgba(0,0,0,.08);display:flex;gap:10px;justify-content:center;flex-wrap:wrap;z-index:20}
+.cta-bar a{padding:12px 20px;border-radius:12px;font-weight:800;font-size:14px;text-decoration:none}
+.cta-review{background:var(--accent);color:#fff}
+.cta-zalo{background:#fff;color:var(--accent);border:2px solid var(--accent)}
+body.has-cta{padding-bottom:72px}
 </style>
 </head>
 <body>
@@ -61,5 +66,17 @@ main{padding:8px 16px 40px;max-width:600px;margin:0 auto}
   </div>
 <% }) %>
 </main>
+
+<% if (location.google_review_url || location.zalo_link) { %>
+<nav class="cta-bar">
+  <% if (location.google_review_url) { %>
+    <a class="cta-review" href="<%= location.google_review_url %>" target="_blank" rel="noopener">⭐ Đánh giá Google</a>
+  <% } %>
+  <% if (location.zalo_link) { %>
+    <a class="cta-zalo" href="<%= location.zalo_link %>" target="_blank" rel="noopener">Zalo OA</a>
+  <% } %>
+</nav>
+<script>document.body.classList.add('has-cta');</script>
+<% } %>
 </body>
 </html>

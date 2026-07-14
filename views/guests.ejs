@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Khách WiFi — H2T Admin</title>
+<style>
+:root{--ink:#1a202c;--paper:#f7f8fa;--accent:#3B82F6;--line:#e2e8f0;--green:#10B981;--red:#EF4444}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);padding:24px 20px 60px}
+.wrap{max-width:1200px;margin:0 auto}
+.head{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.back{width:34px;height:34px;border-radius:9px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink)}
+h1{font-size:22px;font-weight:800;flex:1}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+select,input{padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:#fff}
+.btn{padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+.btn-red{background:var(--red)}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:13px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:#f1f5f9;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#64748b}
+tr:last-child td{border-bottom:none}
+tr.clickable{cursor:pointer}
+tr.clickable:hover{background:#f8fafc}
+.badge{display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700}
+.badge-on{background:#d1fae5;color:#065f46}
+.badge-off{background:#f1f5f9;color:#64748b}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:100}
+.modal.open{display:flex}
+.modal-box{background:#fff;border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow:auto;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-box h2{font-size:18px;margin-bottom:12px}
+.modal-box h3{font-size:13px;color:#64748b;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em}
+.sess{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;line-height:1.6}
+.ans{background:#f8fafc;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px}
+.close{float:right;background:none;border:none;font-size:20px;cursor:pointer;color:#64748b}
+.mac{font-family:monospace;font-size:11px}
+.saved{background:#d1fae5;color:#065f46;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <a class="back" href="/admin">←</a>
+    <h1>👥 Khách & phiên WiFi</h1>
+    <a class="btn btn-outline" href="/admin/export.csv">⬇ CSV</a>
+  </div>
+  <% if (saved) { %><div class="saved">✓ Đã lưu</div><% } %>
+
+  <div class="toolbar">
+    <form method="GET" action="/admin/guests" style="display:flex;gap:8px;flex-wrap:wrap">
+      <select name="location" onchange="this.form.submit()">
+        <option value="">Tất cả quán</option>
+        <% locations.forEach(l => { %>
+          <option value="<%= l.id %>" <%= filterLocation===l.id?'selected':'' %>><%= l.display_name %></option>
+        <% }) %>
+      </select>
+    </form>
+    <span style="font-size:12px;color:#64748b"><%= groups.length %> khách (đã gộp theo SĐT + quán)</span>
+  </div>
+
+  <table>
+    <tr>
+      <th>Khách</th><th>Quán</th><th>Lần vào</th><th>Vào đầu</th><th>Ra cuối</th><th>Online</th><th></th>
+    </tr>
+    <% if (!groups.length) { %>
+      <tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:24px">Chưa có khách nào.</td></tr>
+    <% } %>
+    <% groups.forEach(g => { %>
+    <tr class="clickable" data-cid="<%= g.customer_id %>" data-lid="<%= g.location_id %>"
+        data-mac="<%= g.last_mac||'' %>" data-online="<%= g.is_online?'1':'0' %>">
+      <td>
+        <b><%= g.phone %></b><% if (g.name) { %> — <%= g.name %><% } %>
+        <div class="mac"><%= g.last_mac||'—' %></div>
+      </td>
+      <td><%= g.display_name %></td>
+      <td><b><%= g.visit_count %></b></td>
+      <td><%= g.first_in %></td>
+      <td><%= g.last_out %><% if (g.active_count>0 && !g.is_online) { %> <span style="color:#b45309">(chưa ghi ra)</span><% } %></td>
+      <td>
+        <% if (g.is_online) { %><span class="badge badge-on">● Online</span>
+        <% } else { %><span class="badge badge-off">Offline</span><% } %>
+      </td>
+      <td>
+        <% if (g.is_online && g.last_mac) { %>
+          <button class="btn btn-red" style="padding:5px 10px;font-size:11px" type="button"
+            onclick="event.stopPropagation();disconnectGuest(<%= g.location_id %>, '<%= g.last_mac %>', <%= g.customer_id %>, this)">Ngắt</button>
+        <% } %>
+      </td>
+    </tr>
+    <% }) %>
+  </table>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <button class="close" type="button" onclick="closeModal()">×</button>
+    <h2 id="mTitle">Chi tiết khách</h2>
+    <div id="mBody">Đang tải...</div>
+    <div id="mActions" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<script>
+let curMac = '', curLid = 0, curCid = 0, curOnline = false;
+
+document.querySelectorAll('tr.clickable').forEach(tr => {
+  tr.addEventListener('click', () => openDetail(tr.dataset.cid, tr.dataset.lid, tr.dataset.mac, tr.dataset.online === '1'));
+});
+
+async function openDetail(cid, lid, mac, online) {
+  curCid = cid; curLid = lid; curMac = mac; curOnline = online;
+  document.getElementById('modal').classList.add('open');
+  document.getElementById('mBody').textContent = 'Đang tải...';
+  document.getElementById('mActions').innerHTML = '';
+  const res = await fetch(`/admin/guests/detail?customer_id=${cid}&location_id=${lid}`).then(r => r.json());
+  if (!res.ok) { document.getElementById('mBody').textContent = res.error; return; }
+  const c = res.customer, l = res.location;
+  document.getElementById('mTitle').textContent = `${c.phone}${c.name ? ' — ' + c.name : ''}`;
+  let html = `<p style="font-size:13px;color:#475569;margin-bottom:8px">Quán: <b>${l.display_name}</b> · Tổng <b>${res.totalVisits}</b> lần vào</p>`;
+  html += '<h3>Lịch sử vào / ra</h3>';
+  if (!res.sessions.length) html += '<p style="color:#94a3b8;font-size:12px">Chưa có phiên.</p>';
+  res.sessions.forEach(s => {
+    const dur = s.duration_min != null ? ` · ${s.duration_min} phút` : (s.status === 'active' ? ' · đang online' : '');
+    html += `<div class="sess">
+      <b>#${s.id}</b> Vào: ${s.created_at}<br>
+      Ra: ${s.ended_at || '—'}${dur}<br>
+      MAC: <span class="mac">${s.client_mac||'—'}</span> · IP: ${s.client_ip||'—'}
+    </div>`;
+  });
+  if (res.answers.length) {
+    html += '<h3>Khảo sát / Q&A</h3>';
+    res.answers.forEach(a => {
+      html += `<div class="ans"><b>${a.question_text}</b><br>${a.answer_text} <span style="color:#94a3b8">(${a.created_at})</span></div>`;
+    });
+  }
+  document.getElementById('mBody').innerHTML = html;
+  if (online && mac) {
+    document.getElementById('mActions').innerHTML =
+      `<button class="btn btn-red" type="button" onclick="disconnectGuest(${lid}, '${mac}', ${cid}, null, true)">🔌 Ngắt kết nối WiFi</button>`;
+  }
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+
+async function disconnectGuest(lid, mac, cid, btn, fromModal) {
+  if (!confirm('Ngắt kết nối WiFi khách này?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  const res = await fetch('/admin/guests/disconnect', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ location_id: lid, mac, customer_id: cid })
+  }).then(r => r.json());
+  if (res.ok) {
+    if (fromModal) closeModal();
+    location.reload();
+  } else {
+    alert(res.error || 'Lỗi');
+    if (btn) { btn.disabled = false; btn.textContent = 'Ngắt'; }
+  }
+}
+</script>
+</body>
+</html>

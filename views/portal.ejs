@@ -86,6 +86,30 @@ button:active{transform:scale(.98)}
       <input id="name" name="name" type="text" placeholder="Để quán gọi món cho thân quen" <%= location.require_name ? 'required' : '' %>>
     <% } %>
 
+    <% if (typeof surveyQuestions !== 'undefined' && surveyQuestions.length) { %>
+      <div style="margin-top:8px;padding-top:12px;border-top:1px dashed rgba(0,0,0,.1)">
+        <label style="margin-bottom:10px"><%= location.survey_title || 'Khảo sát nhanh' %></label>
+        <% surveyQuestions.forEach(q => {
+          let opts = [];
+          try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
+        %>
+          <label for="sq<%= q.id %>" style="margin-top:8px;font-size:11px;text-transform:none;letter-spacing:0;font-weight:600">
+            <%= q.question_text %><%= q.required ? ' *' : '' %>
+          </label>
+          <% if (q.question_type === 'select' && opts.length) { %>
+            <select id="sq<%= q.id %>" name="survey_<%= q.id %>" <%= q.required ? 'required' : '' %>
+              style="width:100%;padding:12px;border-radius:12px;border:1.5px solid rgba(0,0,0,.1);font-size:15px;margin-bottom:4px">
+              <option value="">— Chọn —</option>
+              <% opts.forEach(o => { %><option value="<%= o %>"><%= o %></option><% }) %>
+            </select>
+          <% } else { %>
+            <input id="sq<%= q.id %>" name="survey_<%= q.id %>" type="text" placeholder="Câu trả lời..."
+              <%= q.required ? 'required' : '' %>>
+          <% } %>
+        <% }) %>
+      </div>
+    <% } %>
+
     <% if (error) { %><p class="err"><%= error %></p><% } %>
     <button type="submit"><%= location.btn_text || 'Kết nối Internet' %></button>
   </form>
