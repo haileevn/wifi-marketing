@@ -50,6 +50,36 @@ CREATE TABLE IF NOT EXISTS zns_log (
   FOREIGN KEY (customer_id) REFERENCES customers(id)
 );
 CREATE INDEX IF NOT EXISTS idx_zns_customer ON zns_log(customer_id, campaign);
+
+-- Thông tin router quản lý từ xa qua SSH (cần router có IP truy cập được từ VPS: port-forward hoặc VPN mesh)
+CREATE TABLE IF NOT EXISTS routers (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  location_id  INTEGER NOT NULL UNIQUE,
+  ssh_host     TEXT NOT NULL,
+  ssh_port     INTEGER DEFAULT 22,
+  ssh_user     TEXT DEFAULT 'root',
+  ssh_password TEXT DEFAULT '',
+  model        TEXT DEFAULT '',
+  last_status  TEXT DEFAULT '',
+  last_seen    TEXT DEFAULT '',
+  FOREIGN KEY (location_id) REFERENCES locations(id)
+);
+
+-- Menu món ăn theo từng quán
+CREATE TABLE IF NOT EXISTS menu_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  location_id  INTEGER NOT NULL,
+  category     TEXT DEFAULT 'Món chính',
+  name         TEXT NOT NULL,
+  price        INTEGER DEFAULT 0,
+  description  TEXT DEFAULT '',
+  image_data   TEXT DEFAULT '',
+  available    INTEGER DEFAULT 1,
+  sort_order   INTEGER DEFAULT 0,
+  created_at   TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (location_id) REFERENCES locations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_menu_location ON menu_items(location_id, category, sort_order);
 `);
 
 // Migration: thêm cột design mới nếu chưa có
@@ -65,11 +95,36 @@ const newCols = [
   ["require_name", "INTEGER DEFAULT 0"],
   ["custom_css",   "TEXT DEFAULT ''"],
   ["template_id",  "TEXT DEFAULT 'classic'"],
+  ["latitude",     "REAL DEFAULT NULL"],
+  ["longitude",    "REAL DEFAULT NULL"],
+  ["address",      "TEXT DEFAULT ''"],
+  ["menu_enabled", "INTEGER DEFAULT 0"],
+  ["enroll_token", "TEXT DEFAULT ''"],
 ];
 for (const [col, def] of newCols) {
   if (!existingCols.includes(col)) {
     db.exec(`ALTER TABLE locations ADD COLUMN ${col} ${def}`);
   }
+}
+
+// Migration cho bảng routers: hỗ trợ SSH key thay vì chỉ mật khẩu
+const routerCols = db.prepare("PRAGMA table_info(routers)").all().map(c => c.name);
+const routerNewCols = [
+  ["ssh_privkey",  "TEXT DEFAULT ''"],
+  ["ssh_pubkey",   "TEXT DEFAULT ''"],
+  ["enrolled_at",  "TEXT DEFAULT ''"],
+];
+for (const [col, def] of routerNewCols) {
+  if (!routerCols.includes(col)) {
+    db.exec(`ALTER TABLE routers ADD COLUMN ${col} ${def}`);
+  }
+}
+
+// Sinh enroll_token cho các quán chưa có (dữ liệu cũ)
+const crypto = require("crypto");
+const noToken = db.prepare("SELECT id FROM locations WHERE enroll_token = '' OR enroll_token IS NULL").all();
+for (const row of noToken) {
+  db.prepare("UPDATE locations SET enroll_token = ? WHERE id = ?").run(crypto.randomBytes(16).toString("hex"), row.id);
 }
 
 module.exports = {
@@ -88,12 +143,13 @@ module.exports = {
   },
 
   addLocation({ gateway_name, display_name, faskey, promo_text, zalo_link, accent_color }) {
+    const token = require("crypto").randomBytes(16).toString("hex");
     return db.prepare(`
-      INSERT INTO locations (gateway_name, display_name, faskey, promo_text, zalo_link, accent_color)
+      INSERT INTO locations (gateway_name, display_name, faskey, promo_text, zalo_link, accent_color, enroll_token)
       VALUES (@gateway_name, @display_name, @faskey,
               COALESCE(@promo_text,'Kết nối WiFi miễn phí - nhận ưu đãi thành viên!'),
-              COALESCE(@zalo_link,''), COALESCE(@accent_color,'#B4452C'))
-    `).run({ gateway_name, display_name, faskey, promo_text, zalo_link, accent_color });
+              COALESCE(@zalo_link,''), COALESCE(@accent_color,'#B4452C'), @token)
+    `).run({ gateway_name, display_name, faskey, promo_text, zalo_link, accent_color, token });
   },
 
   updateLocationDesign(id, d) {
@@ -157,4 +213,83 @@ module.exports = {
 
   getSetting(key)        { const r=db.prepare("SELECT value FROM settings WHERE key=?").get(key); return r?r.value:null; },
   setSetting(key, value) { db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key,value); },
+
+  /* ── Toạ độ / bản đồ ─────────────────────────────────────── */
+  updateLocationCoords(id, lat, lng, address) {
+    db.prepare("UPDATE locations SET latitude=?, longitude=?, address=? WHERE id=?").run(lat, lng, address||"", id);
+  },
+  locationsWithCoords() {
+    return db.prepare("SELECT * FROM locations WHERE latitude IS NOT NULL AND longitude IS NOT NULL").all();
+  },
+
+  /* ── Routers (điều khiển từ xa qua SSH) ─────────────────────── */
+  findRouterByLocation(locationId) {
+    return db.prepare("SELECT * FROM routers WHERE location_id=?").get(locationId);
+  },
+  findRouterById(id) {
+    return db.prepare("SELECT * FROM routers WHERE id=?").get(id);
+  },
+  upsertRouter(locationId, { ssh_host, ssh_port, ssh_user, ssh_password, model }) {
+    const ex = db.prepare("SELECT id FROM routers WHERE location_id=?").get(locationId);
+    if (ex) {
+      db.prepare(`UPDATE routers SET ssh_host=?, ssh_port=?, ssh_user=?, ssh_password=?, model=? WHERE location_id=?`)
+        .run(ssh_host, ssh_port||22, ssh_user||'root', ssh_password||'', model||'', locationId);
+      return ex.id;
+    }
+    return db.prepare(`INSERT INTO routers (location_id, ssh_host, ssh_port, ssh_user, ssh_password, model)
+      VALUES (?,?,?,?,?,?)`).run(locationId, ssh_host, ssh_port||22, ssh_user||'root', ssh_password||'', model||'').lastInsertRowid;
+  },
+  updateRouterStatus(id, statusJson) {
+    db.prepare("UPDATE routers SET last_status=?, last_seen=datetime('now','localtime') WHERE id=?").run(statusJson, id);
+  },
+  listRoutersWithLocation() {
+    return db.prepare(`
+      SELECT r.*, l.display_name, l.gateway_name FROM routers r
+      JOIN locations l ON l.id=r.location_id ORDER BY l.id`).all();
+  },
+
+  /* ── Enrollment tự động (gói cài đặt) ────────────────────────── */
+  findLocationByEnrollToken(token) {
+    return db.prepare("SELECT * FROM locations WHERE enroll_token = ?").get(token);
+  },
+  regenerateEnrollToken(locationId) {
+    const token = require("crypto").randomBytes(16).toString("hex");
+    db.prepare("UPDATE locations SET enroll_token = ? WHERE id = ?").run(token, locationId);
+    return token;
+  },
+  // Đảm bảo có 1 router record + SSH keypair cho location này (tạo mới nếu chưa có)
+  ensureRouterRecord(locationId, pubkey, privkey) {
+    const ex = db.prepare("SELECT * FROM routers WHERE location_id=?").get(locationId);
+    if (ex && ex.ssh_pubkey) return ex;
+    if (ex) {
+      db.prepare("UPDATE routers SET ssh_pubkey=?, ssh_privkey=? WHERE id=?").run(pubkey, privkey, ex.id);
+      return db.prepare("SELECT * FROM routers WHERE id=?").get(ex.id);
+    }
+    const id = db.prepare(`INSERT INTO routers (location_id, ssh_host, ssh_pubkey, ssh_privkey)
+      VALUES (?, '', ?, ?)`).run(locationId, pubkey, privkey).lastInsertRowid;
+    return db.prepare("SELECT * FROM routers WHERE id=?").get(id);
+  },
+  // Router tự báo IP Tailscale về sau khi cài xong
+  markRouterEnrolled(locationId, { tsIp, model }) {
+    db.prepare(`UPDATE routers SET ssh_host=?, ssh_user='root', model=?,
+      enrolled_at=datetime('now','localtime'), last_seen=datetime('now','localtime') WHERE location_id=?`)
+      .run(tsIp, model||'', locationId);
+  },
+
+  /* ── Menu món ăn ─────────────────────────────────────────── */
+  listMenuItems(locationId) {
+    return db.prepare("SELECT * FROM menu_items WHERE location_id=? ORDER BY category, sort_order, id").all(locationId);
+  },
+  addMenuItem(locationId, item) {
+    return db.prepare(`INSERT INTO menu_items (location_id, category, name, price, description, image_data, sort_order)
+      VALUES (@location_id,@category,@name,@price,@description,@image_data,@sort_order)`)
+      .run({ location_id: locationId, category: item.category||'Món chính', name: item.name,
+        price: item.price||0, description: item.description||'', image_data: item.image_data||'',
+        sort_order: item.sort_order||0 });
+  },
+  deleteMenuItem(id) { db.prepare("DELETE FROM menu_items WHERE id=?").run(id); },
+  toggleMenuItem(id) { db.prepare("UPDATE menu_items SET available = 1 - available WHERE id=?").run(id); },
+  setMenuEnabled(locationId, enabled) {
+    db.prepare("UPDATE locations SET menu_enabled=? WHERE id=?").run(enabled?1:0, locationId);
+  },
 };

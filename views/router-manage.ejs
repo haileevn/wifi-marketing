@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Router — <%= location.display_name %></title>
+<style>
+:root{--ink:#1a202c;--paper:#f7f8fa;--accent:#3B82F6;--line:#e2e8f0;--green:#10B981;--red:#EF4444}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);padding:24px 20px 60px}
+.wrap{max-width:760px;margin:0 auto}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.back{width:34px;height:34px;border-radius:9px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink)}
+h1{font-size:20px;font-weight:800}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+.card h2{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px}
+.field input{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
+.btn-green{background:var(--green)}
+.btn-red{background:var(--red)}
+.btn-outline{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.status-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700}
+.status-ok{background:#d1fae5;color:#065f46}
+.status-bad{background:#fee2e2;color:#991b1b}
+.dot{width:7px;height:7px;border-radius:50%}
+.dot-ok{background:#10B981}
+.dot-bad{background:#EF4444}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+.stat{background:#f8fafc;border-radius:10px;padding:10px;text-align:center}
+.stat b{display:block;font-size:20px}
+.stat span{font-size:11px;color:#64748b}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
+th{font-size:11px;color:#64748b;text-transform:uppercase}
+.mac{font-family:monospace;font-size:12px}
+.log-box{background:#0f172a;color:#a3e635;font-family:monospace;font-size:11px;padding:12px;border-radius:8px;max-height:200px;overflow-y:auto;margin-top:10px;white-space:pre-wrap;display:none}
+.hint{font-size:12px;color:#94a3b8;line-height:1.6;margin-top:8px;background:#fffbeb;border:1px solid #fde68a;padding:10px 12px;border-radius:8px}
+.saved-toast{background:#d1fae5;color:#065f46;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:14px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <a class="back" href="/admin">←</a>
+    <h1>📡 Router — <%= location.display_name %></h1>
+  </div>
+
+  <div class="hint">
+    💡 <b>Khuyên dùng:</b> dùng gói cài đặt tự động bên dưới — router sẽ tự cài OpenNDS, Tailscale
+    và báo IP về portal, không cần tự tìm/nhập IP. Chỉ dùng form SSH thủ công nếu router đã có
+    VPN/IP truy cập được từ trước.
+  </div>
+
+  <% if (regen) { %><div class="saved-toast">✓ Đã tạo link cài đặt mới. Link cũ đã bị vô hiệu hoá.</div><% } %>
+
+  <!-- Gói cài đặt tự động -->
+  <div class="card">
+    <h2>📦 Gói cài đặt tự động <span class="status-badge <%= (router && router.ssh_host) ? 'status-ok' : 'status-bad' %>">
+      <span class="dot <%= (router && router.ssh_host) ? 'dot-ok' : 'dot-bad' %>"></span>
+      <%= (router && router.ssh_host) ? 'Đã kết nối qua Tailscale' : 'Chưa cài' %>
+    </span></h2>
+
+    <% if (router && router.ssh_host) { %>
+      <p style="font-size:13px;color:#475569;margin-bottom:10px">
+        IP Tailscale: <code><%= router.ssh_host %></code>
+        <% if (router.model) { %>· Model: <%= router.model %><% } %>
+        <% if (router.enrolled_at) { %><br>Cài lúc: <%= router.enrolled_at %><% } %>
+      </p>
+    <% } %>
+
+    <p style="font-size:12px;color:#64748b;margin-bottom:8px">
+      SSH vào router (qua Bitvise/PuTTY như bình thường), dán và chạy lệnh sau:
+    </p>
+    <div class="log-box" style="display:block;color:#38bdf8">curl -sL https://<%= host %>/install/<%= location.enroll_token %>.sh | sh</div>
+    <p style="font-size:11px;color:#94a3b8;margin-top:6px">
+      Nếu router không có <code>curl</code>, dùng: <code>wget -qO- https://<%= host %>/install/<%= location.enroll_token %>.sh | sh</code>
+    </p>
+
+    <form method="POST" action="/admin/locations/<%= location.id %>/regen-token" onsubmit="return confirm('Link cũ sẽ ngừng hoạt động. Tiếp tục?')" style="margin-top:12px">
+      <button class="btn btn-outline" style="padding:6px 14px;font-size:12px" type="submit">🔄 Tạo lại link (vô hiệu hoá link cũ)</button>
+    </form>
+  </div>
+
+  <!-- Kết nối SSH thủ công -->
+  <div class="card">
+    <h2>🔑 Cách khác: nhập SSH thủ công</h2>
+    <form id="routerForm" method="POST" action="/admin/router/<%= location.id %>">
+      <div class="row2">
+        <div class="field"><label>Host (IP Tailscale hoặc IP công khai)</label>
+          <input name="ssh_host" value="<%= router?.ssh_host||'' %>" placeholder="100.x.x.x" required></div>
+        <div class="field"><label>Port SSH</label>
+          <input name="ssh_port" type="number" value="<%= router?.ssh_port||22 %>"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Username</label>
+          <input name="ssh_user" value="<%= router?.ssh_user||'root' %>"></div>
+        <div class="field"><label>Password</label>
+          <input name="ssh_password" type="password" value="<%= router?.ssh_password||'' %>" placeholder="••••••"></div>
+      </div>
+      <div class="field"><label>Model router (ghi chú)</label>
+        <input name="model" value="<%= router?.model||'' %>" placeholder="Linksys E5600"></div>
+      <button class="btn" type="submit">💾 Lưu thông tin</button>
+      <button class="btn btn-outline" type="button" onclick="testConn()">🔌 Test kết nối</button>
+    </form>
+    <div id="testResult" style="margin-top:10px;font-size:13px"></div>
+  </div>
+
+  <% if (router && router.ssh_host) { %>
+  <!-- Trạng thái router -->
+  <div class="card">
+    <h2>📊 Trạng thái <button class="btn btn-outline" style="margin-left:auto;padding:4px 10px;font-size:11px" onclick="refreshStatus()">↻ Làm mới</button></h2>
+    <div id="statusBox">Đang tải...</div>
+  </div>
+
+  <!-- Đẩy cấu hình OpenNDS -->
+  <div class="card">
+    <h2>⚡ Đẩy cấu hình WiFi Marketing</h2>
+    <p style="font-size:12px;color:#64748b;margin-bottom:10px">
+      Tự động cài OpenNDS (nếu chưa có) và cấu hình để router trỏ về portal
+      <code><%= host %></code> với gateway <code><%= location.gateway_name %></code>.
+    </p>
+    <div class="field"><label>Thời gian phiên (phút)</label>
+      <input id="sessionMin" type="number" value="720"></div>
+    <button class="btn btn-green" id="pushBtn" onclick="pushConfig()">🚀 Đẩy cấu hình xuống router</button>
+    <div class="log-box" id="pushLog"></div>
+  </div>
+
+  <!-- Đổi WiFi -->
+  <div class="card">
+    <h2>📶 Đổi tên WiFi (SSID)</h2>
+    <div class="field"><label>Tên WiFi mới</label>
+      <input id="newSsid" placeholder="Cơm Tấm Ông Mập - Free WiFi"></div>
+    <div class="field"><label>Mật khẩu (để trống = mạng mở, khuyên dùng cho WiFi Marketing)</label>
+      <input id="newWifiPass" type="password" placeholder="Tối thiểu 8 ký tự nếu đặt"></div>
+    <button class="btn" onclick="pushWifi()">📡 Áp dụng WiFi mới</button>
+    <div id="wifiResult" style="margin-top:8px;font-size:13px"></div>
+  </div>
+
+  <!-- Client đang kết nối -->
+  <div class="card">
+    <h2>👥 Khách đang kết nối <button class="btn btn-outline" style="margin-left:auto;padding:4px 10px;font-size:11px" onclick="loadClients()">↻ Làm mới</button></h2>
+    <table id="clientTable">
+      <tr><th>IP</th><th>MAC</th><th>Trạng thái</th><th></th></tr>
+    </table>
+    <p id="noClients" style="font-size:13px;color:#94a3b8;margin-top:8px;display:none">Chưa có khách nào đang kết nối.</p>
+  </div>
+  <% } else { %>
+  <p style="font-size:13px;color:#94a3b8">Cài gói tự động hoặc nhập SSH thủ công ở trên để mở khoá các tính năng quản lý router.</p>
+  <% } %>
+</div>
+
+<script>
+const LOC_ID = <%= location.id %>;
+
+async function testConn() {
+  const box = document.getElementById('testResult');
+  box.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.2);border-top-color:#3B82F6"></span> Đang kiểm tra...';
+  const res = await fetch(`/admin/router/${LOC_ID}/test`, { method:'POST' }).then(r=>r.json());
+  box.innerHTML = res.ok
+    ? `<span class="status-badge status-ok"><span class="dot dot-ok"></span> Kết nối OK — ${res.info||''}</span>`
+    : `<span class="status-badge status-bad"><span class="dot dot-bad"></span> Lỗi: ${res.error}</span>`;
+}
+
+async function refreshStatus() {
+  const box = document.getElementById('statusBox');
+  box.innerHTML = 'Đang tải...';
+  const res = await fetch(`/admin/router/${LOC_ID}/status`).then(r=>r.json());
+  if (!res.ok) { box.innerHTML = `<span class="status-badge status-bad">Lỗi: ${res.error}</span>`; return; }
+  box.innerHTML = `
+    <span class="status-badge ${res.opennds_running?'status-ok':'status-bad'}">
+      <span class="dot ${res.opennds_running?'dot-ok':'dot-bad'}"></span>
+      OpenNDS ${res.opennds_running?'đang chạy':'không chạy'}
+    </span>
+    <div class="stat-grid">
+      <div class="stat"><b>${res.client_count}</b><span>Khách online</span></div>
+      <div class="stat"><b style="font-size:12px">${res.model||'—'}</b><span>Model</span></div>
+      <div class="stat"><b style="font-size:11px">${(res.uptime||'').split(',')[0]||'—'}</b><span>Uptime</span></div>
+    </div>`;
+}
+
+async function pushConfig() {
+  const btn = document.getElementById('pushBtn');
+  const log = document.getElementById('pushLog');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Đang đẩy cấu hình...';
+  log.style.display = 'block'; log.textContent = 'Đang kết nối SSH...';
+  try {
+    const res = await fetch(`/admin/router/${LOC_ID}/push-config`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ session_minutes: document.getElementById('sessionMin').value })
+    }).then(r=>r.json());
+    if (res.ok) {
+      log.textContent = (res.log||[]).map(l => `$ ${l.cmd}\n${l.stdout||l.stderr||''}`).join('\n\n');
+      log.textContent += '\n\n✓ Hoàn tất! Router đã cấu hình xong.';
+    } else {
+      log.textContent = '✗ Lỗi: ' + res.error;
+    }
+  } catch(e) { log.textContent = '✗ Lỗi: ' + e.message; }
+  btn.disabled = false; btn.innerHTML = '🚀 Đẩy cấu hình xuống router';
+}
+
+async function pushWifi() {
+  const ssid = document.getElementById('newSsid').value.trim();
+  const password = document.getElementById('newWifiPass').value;
+  const box = document.getElementById('wifiResult');
+  if (!ssid) { box.innerHTML = '<span style="color:#EF4444">Nhập tên WiFi trước đã.</span>'; return; }
+  box.innerHTML = '<span class="spin" style="border-color:rgba(0,0,0,.2);border-top-color:#3B82F6"></span> Đang áp dụng...';
+  const res = await fetch(`/admin/router/${LOC_ID}/wifi`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ ssid, password })
+  }).then(r=>r.json());
+  box.innerHTML = res.ok
+    ? `<span style="color:#10B981;font-weight:600">✓ Đã đổi tên WiFi thành "${ssid}"</span>`
+    : `<span style="color:#EF4444">✗ ${res.error}</span>`;
+}
+
+async function loadClients() {
+  const res = await fetch(`/admin/router/${LOC_ID}/clients`).then(r=>r.json());
+  const table = document.getElementById('clientTable');
+  const noClients = document.getElementById('noClients');
+  table.querySelectorAll('tr:not(:first-child)').forEach(tr => tr.remove());
+  if (!res.clients || !res.clients.length) { noClients.style.display = 'block'; return; }
+  noClients.style.display = 'none';
+  res.clients.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${c.ip}</td><td class="mac">${c.mac}</td><td>${c.state||'active'}</td>
+      <td><button class="btn btn-red" style="padding:4px 10px;font-size:11px" onclick="disconnect('${c.mac}')">Ngắt kết nối</button></td>`;
+    table.appendChild(tr);
+  });
+}
+
+async function disconnect(mac) {
+  if (!confirm(`Ngắt kết nối thiết bị ${mac}?`)) return;
+  const res = await fetch(`/admin/router/${LOC_ID}/disconnect`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mac })
+  }).then(r=>r.json());
+  if (res.ok) loadClients(); else alert('Lỗi: ' + res.error);
+}
+
+<% if (router && router.ssh_host) { %>
+refreshStatus();
+loadClients();
+<% } %>
+</script>
+</body>
+</html>

@@ -13,80 +13,88 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);
-     min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 20px 40px}
-.logo-img{max-height:80px;max-width:200px;margin-bottom:14px;border-radius:8px;object-fit:contain}
-.steam{width:72px;height:48px;margin-bottom:4px}
-.steam path{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;opacity:.55;animation:rise 2.6s ease-in-out infinite}
-.steam path:nth-child(2){animation-delay:.5s;opacity:.8}
-.steam path:nth-child(3){animation-delay:1s;opacity:.4}
+     min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 0 40px}
+.hero{width:100%;background:linear-gradient(160deg,var(--accent) 0%,rgba(0,0,0,.25) 100%),var(--accent);
+      padding:40px 20px 56px;display:flex;flex-direction:column;align-items:center;color:#fff;text-align:center}
+.logo-img{max-height:64px;max-width:180px;margin-bottom:12px;border-radius:10px;object-fit:contain;
+          background:#fff;padding:6px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.steam{width:64px;height:44px;margin-bottom:2px}
+.steam path{fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;opacity:.7;animation:rise 2.6s ease-in-out infinite}
+.steam path:nth-child(2){animation-delay:.5s;opacity:.9}
+.steam path:nth-child(3){animation-delay:1s;opacity:.5}
 @keyframes rise{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @media(prefers-reduced-motion:reduce){.steam path{animation:none}}
-.bowl{width:88px;margin-bottom:14px}
-h1{font-size:24px;line-height:1.25;letter-spacing:-.02em;text-align:center;margin-bottom:4px}
-h1 span{color:var(--accent)}
-.promo{margin:14px 0 22px;padding:12px 16px;text-align:center;font-size:15px;
-       background:var(--card);border:2px dashed var(--accent);border-radius:12px;max-width:360px}
-form{width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px}
-label{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
-input{width:100%;padding:14px 16px;font-size:17px;color:var(--ink);
-      background:var(--card);border:2px solid rgba(0,0,0,.12);border-radius:12px;outline:none}
-input:focus{border-color:var(--accent)}
-.err{color:#C0392B;font-size:14px;font-weight:600;text-align:center}
-button{margin-top:6px;padding:16px;font-size:17px;font-weight:700;color:#fff;
-       background:var(--accent);border:none;border-radius:12px;cursor:pointer}
+.bowl{width:80px;margin-bottom:12px}
+.hero h1{font-size:22px;font-weight:800;line-height:1.3;letter-spacing:-.01em;color:#fff}
+.hero .headline{font-size:15px;font-weight:600;opacity:.92;margin-top:4px}
+.auth-card{width:calc(100% - 40px);max-width:380px;background:var(--card);border-radius:20px;
+           box-shadow:0 16px 44px rgba(0,0,0,.18);padding:26px 22px 22px;margin-top:-32px;position:relative;z-index:2}
+.promo{margin-bottom:18px;padding:12px 14px;text-align:center;font-size:14px;line-height:1.4;
+       background:color-mix(in srgb, var(--accent) 8%, transparent);border:1.5px dashed var(--accent);border-radius:12px}
+form{width:100%;display:flex;flex-direction:column;gap:12px}
+label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink);opacity:.7}
+input{width:100%;padding:14px 16px;font-size:16px;color:var(--ink);
+      background:color-mix(in srgb, var(--ink) 4%, transparent);border:1.5px solid rgba(0,0,0,.1);border-radius:12px;outline:none;transition:border .15s}
+input:focus{border-color:var(--accent);background:var(--card)}
+.err{color:#C0392B;font-size:13px;font-weight:600;text-align:center;background:#FEF2F2;padding:8px;border-radius:8px}
+button{margin-top:4px;padding:16px;font-size:16px;font-weight:800;color:#fff;letter-spacing:.01em;
+       background:var(--accent);border:none;border-radius:12px;cursor:pointer;box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent)}
 button:active{transform:scale(.98)}
-.note{margin-top:18px;font-size:12px;color:#8A7A66;text-align:center;max-width:340px;line-height:1.5}
+.note{margin-top:16px;font-size:11px;color:#94867a;text-align:center;line-height:1.5}
+.zalo-link{display:block;margin-top:14px;text-align:center;font-size:13px;color:var(--accent);font-weight:700;text-decoration:none}
 <%- location.custom_css ? location.custom_css : '' %>
 </style>
 </head>
 <body>
-<% if (location.logo_data) { %>
-  <img class="logo-img" src="<%- location.logo_data %>" alt="<%= location.display_name %>">
-<% } else { %>
-  <svg class="steam" viewBox="0 0 72 48" aria-hidden="true">
-    <path d="M22 44 C18 36,26 32,22 24 C18 16,26 12,22 4"/>
-    <path d="M36 46 C32 38,40 34,36 26 C32 18,40 14,36 6"/>
-    <path d="M50 44 C46 36,54 32,50 24 C46 16,54 12,50 4"/>
-  </svg>
-  <svg class="bowl" viewBox="0 0 88 34" aria-hidden="true">
-    <path d="M4 4 H84 C84 22,68 32,44 32 C20 32,4 22,4 4 Z" fill="var(--ink)"/>
-    <ellipse cx="44" cy="4" rx="40" ry="4" fill="var(--bg)" stroke="var(--ink)" stroke-width="2"/>
-  </svg>
-<% } %>
+<div class="hero">
+  <% if (location.logo_data) { %>
+    <img class="logo-img" src="<%- location.logo_data %>" alt="<%= location.display_name %>">
+  <% } else { %>
+    <svg class="steam" viewBox="0 0 72 48" aria-hidden="true">
+      <path d="M22 44 C18 36,26 32,22 24 C18 16,26 12,22 4"/>
+      <path d="M36 46 C32 38,40 34,36 26 C32 18,40 14,36 6"/>
+      <path d="M50 44 C46 36,54 32,50 24 C46 16,54 12,50 4"/>
+    </svg>
+    <svg class="bowl" viewBox="0 0 88 34" aria-hidden="true">
+      <path d="M4 4 H84 C84 22,68 32,44 32 C20 32,4 22,4 4 Z" fill="#fff"/>
+      <ellipse cx="44" cy="4" rx="40" ry="4" fill="var(--accent)" stroke="#fff" stroke-width="2"/>
+    </svg>
+  <% } %>
+  <h1><%= location.display_name %></h1>
+  <p class="headline"><%= location.headline || 'WiFi Miễn Phí' %></p>
+</div>
 
-<h1><%= location.display_name %><br>
-    <span><%= location.headline || 'WiFi Miễn Phí' %></span></h1>
-
-<% if (location.promo_text) { %>
-  <p class="promo"><%= location.promo_text %></p>
-<% } %>
-
-<form method="POST" action="/auth" autocomplete="on">
-  <input type="hidden" name="hid" value="<%= hid %>">
-  <input type="hidden" name="gatewayname" value="<%= gatewayname %>">
-  <input type="hidden" name="gatewayaddress" value="<%= gatewayaddress %>">
-  <input type="hidden" name="gatewayport" value="<%= gatewayport %>">
-  <input type="hidden" name="clientmac" value="<%= clientmac %>">
-  <input type="hidden" name="clientip" value="<%= clientip %>">
-  <input type="hidden" name="originurl" value="<%= originurl %>">
-
-  <label for="phone">Số điện thoại</label>
-  <input id="phone" name="phone" type="tel" inputmode="numeric" placeholder="09xx xxx xxx" required>
-
-  <% if (location.show_name) { %>
-    <label for="name">Tên của bạn<%= location.require_name ? '' : ' (không bắt buộc)' %></label>
-    <input id="name" name="name" type="text" placeholder="Để quán gọi món cho thân quen" <%= location.require_name ? 'required' : '' %>>
+<div class="auth-card">
+  <% if (location.promo_text) { %>
+    <p class="promo"><%= location.promo_text %></p>
   <% } %>
 
-  <% if (error) { %><p class="err"><%= error %></p><% } %>
-  <button type="submit"><%= location.btn_text || 'Kết nối Internet' %></button>
-</form>
+  <form method="POST" action="/auth" autocomplete="on">
+    <input type="hidden" name="hid" value="<%= hid %>">
+    <input type="hidden" name="gatewayname" value="<%= gatewayname %>">
+    <input type="hidden" name="gatewayaddress" value="<%= gatewayaddress %>">
+    <input type="hidden" name="gatewayport" value="<%= gatewayport %>">
+    <input type="hidden" name="clientmac" value="<%= clientmac %>">
+    <input type="hidden" name="clientip" value="<%= clientip %>">
+    <input type="hidden" name="originurl" value="<%= originurl %>">
 
-<p class="note">Bấm "<%= location.btn_text||'Kết nối Internet' %>" nghĩa là bạn đồng ý cho
-<%= location.display_name %> lưu số điện thoại để gửi ưu đãi. Quán không chia sẻ cho bên thứ ba.</p>
-<% if (location.zalo_link) { %>
-  <a href="<%= location.zalo_link %>" style="margin-top:16px;font-size:14px;color:var(--accent);font-weight:600">
-    Theo dõi Zalo quán để nhận ưu đãi →</a>
-<% } %>
+    <label for="phone">Số điện thoại</label>
+    <input id="phone" name="phone" type="tel" inputmode="numeric" placeholder="09xx xxx xxx" required>
+
+    <% if (location.show_name) { %>
+      <label for="name">Tên của bạn<%= location.require_name ? '' : ' (không bắt buộc)' %></label>
+      <input id="name" name="name" type="text" placeholder="Để quán gọi món cho thân quen" <%= location.require_name ? 'required' : '' %>>
+    <% } %>
+
+    <% if (error) { %><p class="err"><%= error %></p><% } %>
+    <button type="submit"><%= location.btn_text || 'Kết nối Internet' %></button>
+  </form>
+
+  <p class="note">Bấm "<%= location.btn_text||'Kết nối Internet' %>" nghĩa là bạn đồng ý cho
+  <%= location.display_name %> lưu số điện thoại để gửi ưu đãi. Quán không chia sẻ cho bên thứ ba.</p>
+  <% if (location.zalo_link) { %>
+    <a class="zalo-link" href="<%= location.zalo_link %>">Theo dõi Zalo quán để nhận ưu đãi →</a>
+  <% } %>
+</div>
 </body>
 </html>

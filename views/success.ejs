@@ -22,10 +22,13 @@
   .check svg { width: 36px; }
   h1 { font-size: 24px; margin-bottom: 10px; }
   p { font-size: 15px; color: #6B5B49; max-width: 320px; line-height: 1.6; }
-  a.zalo {
-    margin-top: 22px; display: inline-block; padding: 13px 26px; border-radius: 12px;
-    background: var(--accent); color: #fff; font-weight: 700; text-decoration: none;
+  .btn-row { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
+  a.zalo, a.menu-btn {
+    display: inline-block; padding: 13px 26px; border-radius: 12px;
+    font-weight: 700; text-decoration: none;
   }
+  a.zalo { background: var(--accent); color: #fff; }
+  a.menu-btn { background: #fff; color: var(--accent); border: 2px solid var(--accent); }
 </style>
 </head>
 <body>
@@ -37,8 +40,13 @@
   <h1>Xong rồi, mời bạn dùng mạng!</h1>
   <p>Đang mở Internet cho thiết bị của bạn... Nếu sau 5 giây chưa vào được mạng,
      <a href="<%= authUrl %>">bấm vào đây</a>.</p>
-  <% if (location.zalo_link) { %>
-    <a class="zalo" href="<%= location.zalo_link %>">Nhận ưu đãi qua Zalo quán</a>
-  <% } %>
+  <div class="btn-row">
+    <% if (location.menu_enabled) { %>
+      <a class="menu-btn" href="/menu/<%= location.id %>" target="_blank">🍽️ Xem Menu</a>
+    <% } %>
+    <% if (location.zalo_link) { %>
+      <a class="zalo" href="<%= location.zalo_link %>">Nhận ưu đãi qua Zalo quán</a>
+    <% } %>
+  </div>
 </body>
 </html>

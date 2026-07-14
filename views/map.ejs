@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bản đồ các quán — H2T WiFi Marketing</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--ink:#1a202c;--paper:#f7f8fa;--accent:#3B82F6;--line:#e2e8f0}
+*{margin:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink)}
+.head{display:flex;align-items:center;gap:10px;padding:16px 20px;background:#fff;border-bottom:1px solid var(--line)}
+.back{width:34px;height:34px;border-radius:9px;background:#f7fafc;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink)}
+h1{font-size:18px;font-weight:800}
+#map{height:calc(100vh - 65px)}
+.leaflet-popup-content b{font-size:14px;display:block;margin-bottom:4px}
+.leaflet-popup-content a{color:var(--accent);font-weight:600;font-size:13px;text-decoration:none}
+.no-coords-panel{position:absolute;top:80px;right:16px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;width:260px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:1000;max-height:70vh;overflow-y:auto}
+.no-coords-panel h3{font-size:13px;font-weight:700;margin-bottom:8px}
+.nc-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.nc-item button{padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="head">
+  <a class="back" href="/admin">←</a>
+  <h1>🗺️ Bản đồ các quán</h1>
+</div>
+<div id="map"></div>
+
+<div class="no-coords-panel" id="ncPanel" style="display:none">
+  <h3>Quán chưa có toạ độ</h3>
+  <div id="ncList"></div>
+  <p style="font-size:11px;color:#94a3b8;margin-top:8px">Bấm "Đặt vị trí" rồi click lên bản đồ để gán toạ độ.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const LOCATIONS = <%- JSON.stringify(locations) %>;
+const map = L.map('map').setView([10.7769, 106.7009], 12); // mặc định TP.HCM
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+const markers = {};
+function renderMarkers() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  const withCoords = LOCATIONS.filter(l => l.latitude && l.longitude);
+  withCoords.forEach(loc => {
+    const m = L.marker([loc.latitude, loc.longitude]).addTo(map);
+    m.bindPopup(`<b>${loc.display_name}</b>${loc.address||''}<br>
+      <a href="/admin/editor/${loc.id}">✏️ Sửa giao diện</a> ·
+      <a href="/admin/router/${loc.id}">📡 Router</a> ·
+      <a href="/preview/${loc.id}" target="_blank">👁️ Portal</a>`);
+    markers[loc.id] = m;
+  });
+  if (withCoords.length) {
+    const group = L.featureGroup(Object.values(markers));
+    map.fitBounds(group.getBounds().pad(0.2));
+  }
+
+  const missing = LOCATIONS.filter(l => !l.latitude || !l.longitude);
+  const panel = document.getElementById('ncPanel');
+  const list = document.getElementById('ncList');
+  if (missing.length) {
+    panel.style.display = 'block';
+    list.innerHTML = missing.map(l => `
+      <div class="nc-item">
+        <span>${l.display_name}</span>
+        <button onclick="startPlacing(${l.id}, '${l.display_name.replace(/'/g,"")}')">Đặt vị trí</button>
+      </div>`).join('');
+  } else panel.style.display = 'none';
+}
+renderMarkers();
+
+let placingId = null, placingName = '';
+function startPlacing(id, name) {
+  placingId = id; placingName = name;
+  alert(`Click lên bản đồ để đặt vị trí cho "${name}"`);
+}
+map.on('click', async (e) => {
+  if (!placingId) return;
+  const { lat, lng } = e.latlng;
+  await fetch(`/admin/locations/${placingId}/coords`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `latitude=${lat}&longitude=${lng}`
+  });
+  const loc = LOCATIONS.find(l => l.id === placingId);
+  loc.latitude = lat; loc.longitude = lng;
+  placingId = null;
+  renderMarkers();
+});
+</script>
+</body>
+</html>

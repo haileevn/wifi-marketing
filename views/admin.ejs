@@ -33,8 +33,11 @@ form.add input{padding:9px 12px;border:1px solid var(--line);border-radius:8px;f
 </head>
 <body>
 <div class="wrap">
-  <h1>H2T WiFi Marketing</h1>
-  <p class="sub">Hệ thống thu thập khách hàng qua WiFi cho chuỗi quán</p>
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+    <div><h1>H2T WiFi Marketing</h1>
+    <p class="sub">Hệ thống thu thập khách hàng qua WiFi cho chuỗi quán</p></div>
+    <a class="btn" href="/admin/map" style="background:#7C3AED">🗺️ Bản đồ các quán</a>
+  </div>
 
   <% if (saved) { %><div class="saved">✓ Đã lưu thay đổi thành công.</div><% } %>
 
@@ -56,8 +59,10 @@ form.add input{padding:9px 12px;border:1px solid var(--line);border-radius:8px;f
       <td><%= l.customers %></td>
       <td><%= l.visits %></td>
       <td><%= l.today || 0 %></td>
-      <td style="white-space:nowrap;display:flex;gap:6px;align-items:center">
-        <a class="btn btn-sm btn-outline" href="/admin/editor/<%= l.id %>">✏️ Sửa giao diện</a>
+      <td style="white-space:nowrap;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <a class="btn btn-sm btn-outline" href="/admin/editor/<%= l.id %>">✏️ Giao diện</a>
+        <a class="btn btn-sm" href="/admin/menu/<%= l.id %>" style="background:#F59E0B">🍽️ Menu</a>
+        <a class="btn btn-sm" href="/admin/router/<%= l.id %>" style="background:#0EA5E9">📡 Router</a>
         <a class="btn btn-sm" href="/preview/<%= l.id %>" target="_blank" style="background:#7C3AED">👁️ Xem</a>
       </td>
     </tr>
