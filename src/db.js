@@ -184,6 +184,19 @@ CREATE TABLE IF NOT EXISTS survey_answers (
 CREATE INDEX IF NOT EXISTS idx_survey_ans_visit ON survey_answers(visit_id);
 `);
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS survey_campaigns (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  location_id   INTEGER NOT NULL,
+  name          TEXT NOT NULL,
+  date_from     TEXT DEFAULT '',
+  date_to       TEXT DEFAULT '',
+  created_at    TEXT DEFAULT (datetime('now','localtime')),
+  FOREIGN KEY (location_id) REFERENCES locations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_survey_camp_loc ON survey_campaigns(location_id);
+`);
+
 // Migration cho bảng routers: hỗ trợ SSH key thay vì chỉ mật khẩu
 const routerCols = db.prepare("PRAGMA table_info(routers)").all().map(c => c.name);
 const routerNewCols = [
@@ -406,7 +419,25 @@ module.exports = {
       ORDER BY cnt DESC
     `).all(...params);
     const total = rows.reduce((s, r) => s + r.cnt, 0);
-    return { rows, total };
+    const cronCnt = rows.find((r) => r.end_source === "cron_sync")?.cnt || 0;
+    const cronPct = total ? Math.round((cronCnt / total) * 100) : 0;
+    return { rows, total, cron_pct: cronPct, cron_warn: cronPct > 30 };
+  },
+
+  listSurveyCampaigns(locationId) {
+    return db.prepare(`
+      SELECT * FROM survey_campaigns WHERE location_id=? ORDER BY id DESC
+    `).all(locationId);
+  },
+
+  addSurveyCampaign(locationId, { name, date_from, date_to }) {
+    return db.prepare(`
+      INSERT INTO survey_campaigns (location_id, name, date_from, date_to) VALUES (?,?,?,?)
+    `).run(locationId, String(name || "").slice(0, 80), date_from || "", date_to || "").lastInsertRowid;
+  },
+
+  deleteSurveyCampaign(id, locationId) {
+    return db.prepare("DELETE FROM survey_campaigns WHERE id=? AND location_id=?").run(id, locationId).changes;
   },
 
   listGuestGroups({ locationId = null, limit = 100 } = {}) {

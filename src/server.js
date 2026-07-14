@@ -12,6 +12,7 @@ const versioning = require("./version");
 const fs = require("fs");
 const { themeCss } = require("./portal-themes");
 const sessionSync = require("./session-sync");
+const { buildPullConfigScript, buildPullFirmwareScript } = require("./router-pull");
 
 const app = express();
 app.set("view engine", "ejs");
@@ -326,9 +327,30 @@ app.get("/admin/survey/:id", adminAuth, (req, res) => {
     location: loc,
     questions: store.listSurveyQuestions(loc.id),
     stats: store.surveyAnswerStats(loc.id, range),
+    campaigns: store.listSurveyCampaigns(loc.id),
     range,
     saved: req.query.saved === "1",
   });
+});
+
+app.post("/admin/survey/:id/campaigns/add", adminAuth, (req, res) => {
+  const name = (req.body.name || "").trim();
+  if (name) {
+    store.addSurveyCampaign(req.params.id, {
+      name,
+      date_from: (req.body.date_from || "").slice(0, 10),
+      date_to: (req.body.date_to || "").slice(0, 10),
+    });
+  }
+  const q = [];
+  if (req.body.date_from) q.push(`from=${req.body.date_from}`);
+  if (req.body.date_to) q.push(`to=${req.body.date_to}`);
+  res.redirect(`/admin/survey/${req.params.id}?saved=1${q.length ? "&" + q.join("&") : ""}`);
+});
+
+app.post("/admin/survey/:id/campaigns/:cid/delete", adminAuth, (req, res) => {
+  store.deleteSurveyCampaign(req.params.cid, req.params.id);
+  res.redirect(`/admin/survey/${req.params.id}?saved=1`);
 });
 
 app.post("/admin/survey/:id/settings", adminAuth, (req, res) => {
@@ -447,9 +469,16 @@ app.get("/admin/router/:id", adminAuth, (req, res) => {
   if (!loc) return res.redirect("/admin");
   const router = store.findRouterByLocation(loc.id);
   // Không gửi plaintext password ra HTML — chỉ báo đã có mật khẩu hay chưa
-  const routerSafe = router ? { ...router, ssh_password: undefined, has_password: !!(router.ssh_password), ssh_privkey: undefined } : null;
+  const routerSafe = router ? { ...router, ssh_password: undefined, has_password: !!(router.ssh_password), ssh_privkey: undefined, report_token: undefined } : null;
+  const reportToken = store.ensureReportToken(loc.id);
+  const host = req.get("host");
+  const domain = host.includes(":") ? host.split(":")[0] : host;
+  const pullConfigUrl = `https://${host}/api/router/pull-config.sh?token=${reportToken}`;
+  const fw = versioning.readLatestManifest();
+  const pullFwUrl = fw ? `https://${host}/api/router/pull-firmware.sh?token=${reportToken}` : null;
   res.render("router-manage",{
-    location:loc, router: routerSafe, host: req.get("host"),
+    location:loc, router: routerSafe, host, domain,
+    reportToken, pullConfigUrl, pullFwUrl, firmwareLatest: fw?.version || null,
     regen: req.query.regen==="1", saved: req.query.saved==="1",
     oneShot: (process.env.ENROLL_ONE_SHOT || "1") !== "0",
   });
@@ -727,6 +756,29 @@ app.post("/api/enroll/:token", publicLimiter, (req, res) => {
   const fw = versioning.readLatestManifest();
   if (fw) store.setRouterFirmwareVersion(loc.id, fw.version);
   res.json({ ok:true, one_shot: (process.env.ENROLL_ONE_SHOT || "1") !== "0", firmware_version: fw?.version || null });
+});
+
+/* ── Router pull (router → portal, không cần VPS SSH) ─────────── */
+app.get("/api/router/pull-config.sh", publicLimiter, (req, res) => {
+  const token = String(req.query.token || "").trim();
+  const router = store.findRouterByReportToken(token);
+  if (!router) return res.status(403).type("text/plain").send("# invalid token\n");
+  const loc = store.findLocationById(router.location_id);
+  if (!loc) return res.status(404).type("text/plain").send("# location not found\n");
+  const domain = (req.get("host") || process.env.PORTAL_DOMAIN || "wifi.06.com.vn").split(":")[0];
+  const script = buildPullConfigScript(loc, domain, token, Number(req.query.session_minutes) || 720);
+  res.set("Cache-Control", "no-store").type("text/x-shellscript").send(script);
+});
+
+app.get("/api/router/pull-firmware.sh", publicLimiter, (req, res) => {
+  const token = String(req.query.token || "").trim();
+  const router = store.findRouterByReportToken(token);
+  if (!router) return res.status(403).type("text/plain").send("# invalid token\n");
+  const fw = versioning.readLatestManifest();
+  if (!fw) return res.status(404).type("text/plain").send("# no firmware release\n");
+  const domain = (req.get("host") || process.env.PORTAL_DOMAIN || "wifi.06.com.vn").split(":")[0];
+  const script = buildPullFirmwareScript(domain, token, fw.version, fw.filename);
+  res.set("Cache-Control", "no-store").type("text/x-shellscript").send(script);
 });
 
 /* ── Session webhook (binauth / router) + manual sync ─────────── */

@@ -7,6 +7,11 @@
     },
     {
       "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["tag:router:22"]
+    },
+    {
+      "action": "accept",
       "src": ["tag:portal"],
       "dst": ["tag:router:41641"]
     },

@@ -79,6 +79,33 @@ h1{font-size:20px;font-weight:800;flex:1}
       <button type="button" onclick="setRange(30)">Last 30 days</button>
       <button type="button" onclick="setRange(0)">This month</button>
     </div>
+    <% if (campaigns && campaigns.length) { %>
+      <p style="font-size:12px;color:#64748b;margin-top:14px;margin-bottom:6px">Saved campaigns:</p>
+      <div class="preset">
+        <% campaigns.forEach(c => { %>
+          <a class="btn btn-outline" style="text-decoration:none;padding:4px 12px;font-size:11px"
+             href="/admin/survey/<%= location.id %>?from=<%= c.date_from %>&to=<%= c.date_to %>"><%= c.name %></a>
+        <% }) %>
+      </div>
+    <% } %>
+    <form method="POST" action="/admin/survey/<%= location.id %>/campaigns/add" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <p style="font-size:12px;font-weight:600;margin-bottom:8px">Save current range as campaign</p>
+      <div class="filter-row">
+        <div class="field"><label>Name</label><input name="name" placeholder="Tết 2026" required></div>
+        <div class="field"><label>From</label><input type="date" name="date_from" value="<%= range && range.from ? range.from : '' %>"></div>
+        <div class="field"><label>To</label><input type="date" name="date_to" value="<%= range && range.to ? range.to : '' %>"></div>
+        <button class="btn" type="submit" style="align-self:flex-end">Save</button>
+      </div>
+    </form>
+    <% if (campaigns && campaigns.length) { %>
+      <div style="margin-top:8px">
+        <% campaigns.forEach(c => { %>
+          <form method="POST" action="/admin/survey/<%= location.id %>/campaigns/<%= c.id %>/delete" style="display:inline" onsubmit="return confirm('Xóa campaign?')">
+            <button type="submit" style="border:none;background:none;color:#94a3b8;font-size:11px;cursor:pointer">✕ <%= c.name %></button>
+          </form>
+        <% }) %>
+      </div>
+    <% } %>
   </div>
 
   <script>

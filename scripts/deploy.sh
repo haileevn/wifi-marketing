@@ -44,7 +44,7 @@ git -c safe.directory="\$APP" fetch origin
 git -c safe.directory="\$APP" checkout "$BRANCH"
 git -c safe.directory="\$APP" pull --ff-only origin "$BRANCH"
 npm install --omit=dev
-npm run release -- --changelog "Deploy \$(git rev-parse --short HEAD)"
+npm run release -- --no-bump --changelog "Deploy \$(git rev-parse --short HEAD)"
 if [[ ! -f .env ]]; then
   cp .env.example .env
   echo "WARN: created .env from example — điền ADMIN_PASS/SECRETS_KEY/TAILSCALE_AUTHKEY"

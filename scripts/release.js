@@ -6,13 +6,20 @@
  *   npm run release -- --changelog "Fix cron OTA"
  */
 require("dotenv").config();
+const { execFileSync } = require("child_process");
+const path = require("path");
 const versioning = require("../src/version");
 const store = require("../src/db");
 
 const args = process.argv.slice(2);
+if (!args.includes("--no-bump")) {
+  execFileSync(process.execPath, [path.join(__dirname, "bump-version.js")], { stdio: "inherit" });
+}
+
+const args2 = process.argv.slice(2).filter((a) => a !== "--no-bump");
 let changelog = "";
-const i = args.indexOf("--changelog");
-if (i >= 0) changelog = args[i + 1] || "";
+const i = args2.indexOf("--changelog");
+if (i >= 0) changelog = args2[i + 1] || "";
 
 const built = versioning.buildFirmwarePackage({
   changelog: changelog || `Release firmware ${versioning.firmwareVersion()}`,

@@ -52,6 +52,12 @@ tr.clickable:hover{background:#f8fafc}
     <h1>👥 Khách & phiên WiFi</h1>
     <a class="btn btn-outline" href="/admin/export.csv">⬇ CSV</a>
   </div>
+  <% if (endStats && endStats.cron_warn) { %>
+  <div class="saved" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a">
+    ⚠ <b>Cron sync đóng <%= endStats.cron_pct %>% phiên</b> — router webhook (binauth/authmon) có thể chưa hoạt động.
+    Vào <a href="/admin/router/<%= filterLocation || (locations[0]&&locations[0].id) %>" style="color:#b45309">Router → Pull config</a> hoặc cài Tailscale trên VPS.
+  </div>
+  <% } %>
   <% if (saved) { %><div class="saved">✓ Đã lưu</div><% } %>
 
   <div class="toolbar">

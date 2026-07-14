@@ -1,12 +1,13 @@
 {
   "name": "h2t-wifi-marketing",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "He thong WiFi Marketing multi-tenant cho chuoi quan an - OpenNDS FAS server",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "add-location": "node scripts/add-location.js",
     "smoke": "node scripts/smoke-test.js",
+    "bump": "node scripts/bump-version.js",
     "release": "node scripts/release.js",
     "zns-check": "node scripts/zns-check.js",
     "deploy": "bash scripts/deploy.sh"
